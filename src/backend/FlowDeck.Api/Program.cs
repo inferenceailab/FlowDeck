@@ -38,6 +38,10 @@ builder.Services.AddExceptionHandler<FlowDeckExceptionHandler>();
 
 // Readiness depends on the store; liveness deliberately does not. A node whose
 // database is down should leave rotation, not be restarted.
+// #28: a machine-readable description of the API, so clients can be generated
+// rather than hand-written against prose.
+builder.Services.AddOpenApi();
+
 builder.Services.AddHealthChecks()
     .AddCheck<WorkflowStoreHealthCheck>("workflow-store", tags: ["ready"]);
 
@@ -62,6 +66,11 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
 });
+
+// Served unconditionally, not only in Development. This API is deployed to a
+// homelab behind the operator's own network boundary, and a description a
+// client cannot fetch from the running server is a description that goes stale.
+app.MapOpenApi();
 
 app.MapWorkflowEndpoints();
 app.MapInstanceEndpoints();
