@@ -221,8 +221,134 @@ reloaded.ErrorMessage;  // "card declined"
 `Error` is populated only on the instance `StartAsync` returned, in the process
 that ran it.
 
-Remaining steps do not execute. There is **no retry and no compensation** yet
-(#37, #38): any failure is terminal.
+Remaining steps do not execute. Without a retry policy any failure is terminal;
+with one, see [Retry](#retry) below. There is **no compensation** yet (#38).
+
+## Retry
+
+A step declares how many times it may be attempted and how long to wait between
+attempts:
+
+```csharp
+builder.AddStep("charge", () => new ChargeCard(gateway),
+    RetryPolicy.ExponentialBackoff(3, TimeSpan.FromSeconds(2)));
+```
+
+Or once for every step in the workflow:
+
+```csharp
+builder
+    .WithRetryPolicy(RetryPolicy.ExponentialBackoff(3, TimeSpan.FromSeconds(2)))
+    .AddStep("charge", () => new ChargeCard(gateway))
+    .AddStep("ship", () => new Ship());
+```
+
+A step policy overrides the workflow default, and `RetryPolicy.None` opts a step
+out of it. The default applies only to steps declared **after** it.
+
+| Factory | Behaviour |
+| --- | --- |
+| `RetryPolicy.None` | One attempt. The default. |
+| `RetryPolicy.FixedDelay(n, delay)` | The same wait between every attempt |
+| `RetryPolicy.ExponentialBackoff(n, base)` | Doubling waits, with jitter |
+
+`MaxAttempts` counts **attempts, not retries** — `3` means the step runs at most
+three times. Delays are capped by `MaxDelay` so an instance never appears hung,
+and exponential backoff jitters by default, so a hundred instances that failed
+together do not retry together.
+
+### Your step must be idempotent
+
+**A retried step runs again in full.** The step is the unit of retry, not the
+line that threw, so everything the step did before throwing happens a second
+time:
+
+```csharp
+public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
+{
+    ReserveStock();      // runs on attempt 1
+    ShipOrder();         // throws on attempt 1
+    return ValueTask.FromResult(Outcome.Next);
+}
+// attempt 2 reserves the stock *again*
+```
+
+**The engine provides no duplicate protection.** It does not deduplicate step
+executions, track side effects, or know what your step did. It cannot: a step is
+arbitrary C#, and the engine has no way to tell a database write from a wire
+transfer. Only you can make a retry safe.
+
+This bites hardest where you would least like it to. A charge that reaches the
+payment gateway and then times out on the response *succeeded* — the money moved
+— but from the step's point of view it failed, so it retries and charges again.
+
+Pass an idempotency key derived from something stable:
+
+```csharp
+public sealed class ChargeCard(IPaymentGateway gateway) : IStep
+{
+    public async ValueTask<Outcome> ExecuteAsync(
+        IStepContext context,
+        CancellationToken cancellationToken = default)
+    {
+        // Derived from the instance id, so every attempt at this step sends the
+        // same key. A key generated per execution would be a new key on every
+        // retry, which is the same as having none.
+        var idempotencyKey = $"{context.InstanceId}:{context.StepName}";
+
+        await gateway.ChargeAsync(idempotencyKey, amount: 4200, cancellationToken);
+
+        return Outcome.Next;
+    }
+}
+```
+
+`Guid.NewGuid()` as a key is the mistake worth naming: it is different on every
+attempt, so the gateway sees each retry as a new charge and an idempotent
+gateway cannot help you.
+
+Three ways to make a step safe, in rough order of preference:
+
+1. **Give the downstream service an idempotency key**, as above. Best, because
+   the guarantee lives with the side effect.
+2. **Check before acting** — `if (await OrderExists(id)) return Outcome.Next;`.
+   Cheaper, and racy if anything else can act between the check and the write.
+3. **Split the step** so the non-repeatable part is its own step with
+   `RetryPolicy.None`. A completed step is never re-executed, so nothing before
+   it repeats.
+
+If a step cannot be made idempotent, do not give it a retry policy. An
+un-retried failure you can see is better than a duplicate side effect you
+cannot.
+
+### Attempts are visible afterwards
+
+Every attempt appends its own history entry, carrying its own error and its
+attempt number:
+
+```csharp
+var history = await engine.GetHistoryAsync(instance.Id);
+
+foreach (var entry in history)
+{
+    Console.WriteLine($"{entry.StepName} attempt {entry.Attempt}: {entry.Status}");
+}
+```
+
+`Attempt` starts at 1, including for a step with no policy. A step re-entered
+after a resume reports attempt 1 again — it never failed, so counting it as a
+retry would report a failure that did not happen.
+
+### What retry does not do yet
+
+- **The wait blocks the caller.** `StartAsync` does not return during a backoff,
+  so a policy with long delays holds the calling thread's task for that long.
+  Releasing the worker needs a scheduler (#39).
+- **A host that dies mid-retry does not recover.** The attempt count is durable,
+  so the ceiling still applies, but the instance is left `Running` and nothing
+  resumes it yet (#39).
+- **Nothing is undone.** A step that exhausts its attempts fails the instance and
+  the steps that already succeeded stay done. That is compensation (#38).
 
 ## Querying and cancelling
 
@@ -325,14 +451,18 @@ caught separately from faults thrown by your step code.
 
 | Limitation | Tracked by |
 | --- | --- |
-| Instances are lost on process restart | #13, #14 |
-| The instance store grows without bound | #20 |
-| `ResumeAsync` only works in the starting process | #14, #39 |
-| No retry on step failure | #37 |
+| A retry backoff blocks the calling task | #39 |
+| An instance left `Running` by a crash is never resumed | #39 |
 | No compensation or rollback | #38 |
 | Single node only | #39 |
-| No HTTP API | M3 |
-| Input is not persisted | #15 |
+| A suspended instance cannot be resumed over HTTP | #68 |
+| No authentication on the API | #42 |
+| Definitions are C# classes registered at startup | #40 |
+
+Earlier entries here claimed instances were lost on restart, that there was no
+HTTP API, and that input was not persisted. All three were fixed in M2 and M3
+and the table was not updated — which is its own lesson about documentation that
+nothing verifies.
 
 ## See also
 
