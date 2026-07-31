@@ -1,4 +1,5 @@
 using FlowDeck.Core;
+using FlowDeck.Core.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,7 @@ namespace FlowDeck.Api.Tests;
 public sealed class FlowDeckApiFactory : WebApplicationFactory<Program>
 {
     private readonly List<IWorkflowDefinition> definitions = [];
+    private IWorkflowStore? store;
 
     /// <summary>
     /// Registers a definition before the first request.
@@ -26,6 +28,15 @@ public sealed class FlowDeckApiFactory : WebApplicationFactory<Program>
     public FlowDeckApiFactory With(IWorkflowDefinition definition)
     {
         this.definitions.Add(definition);
+        return this;
+    }
+
+    /// <summary>
+    /// Substitutes the workflow store, for tests that need it to misbehave.
+    /// </summary>
+    public FlowDeckApiFactory WithStore(IWorkflowStore replacement)
+    {
+        this.store = replacement;
         return this;
     }
 
@@ -52,6 +63,11 @@ public sealed class FlowDeckApiFactory : WebApplicationFactory<Program>
 
                 return registry;
             });
+
+            if (this.store is { } replacement)
+            {
+                services.AddSingleton(replacement);
+            }
         });
     }
 }
