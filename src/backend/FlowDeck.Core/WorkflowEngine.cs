@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace FlowDeck.Core;
 
 /// <summary>
@@ -16,6 +18,7 @@ public sealed class WorkflowEngine
     private readonly StepExecutor executor;
     private readonly TimeProvider timeProvider;
     private readonly IInstanceStore instances;
+    private readonly ConcurrentDictionary<Guid, RuntimeState> runtime = new();
 
     public WorkflowEngine(
         WorkflowRegistry registry,
@@ -51,6 +54,72 @@ public sealed class WorkflowEngine
     /// Every instance this engine has started, most recently created first.
     /// </summary>
     public IReadOnlyCollection<WorkflowInstance> GetInstances() => this.instances.GetAll();
+
+    /// <summary>
+    /// Stops an instance permanently.
+    /// </summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">
+    /// The instance has already reached a terminal state.
+    /// </exception>
+    public WorkflowInstance Cancel(Guid instanceId)
+    {
+        var instance = this.instances.Get(instanceId);
+
+        if (instance.IsTerminal)
+        {
+            throw new InvalidStateTransitionException(
+                instanceId, instance.Status, InstanceStatus.Cancelled);
+        }
+
+        instance.Status = InstanceStatus.Cancelled;
+        instance.CompletedAt = this.timeProvider.GetUtcNow();
+
+        // Dropping the runtime state is what makes cancellation binding rather
+        // than advisory: there is nothing left to resume from. CurrentStepName
+        // is left intact so an operator can still see where it stopped.
+        this.runtime.TryRemove(instanceId, out _);
+
+        return instance;
+    }
+
+    /// <summary>
+    /// Continues a suspended instance from the step it stopped at.
+    /// </summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">
+    /// The instance is not suspended.
+    /// </exception>
+    public async Task<WorkflowInstance> ResumeAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = this.instances.Get(instanceId);
+
+        if (instance.Status != InstanceStatus.Suspended
+            || !this.runtime.TryGetValue(instanceId, out var state))
+        {
+            throw new InvalidStateTransitionException(
+                instanceId, instance.Status, InstanceStatus.Running);
+        }
+
+        instance.Status = InstanceStatus.Running;
+
+        await this.RunAsync(instance, state.Steps, state.Data, state.Input, cancellationToken)
+            .ConfigureAwait(false);
+
+        return instance;
+    }
+
+    /// <summary>
+    /// What an in-flight instance needs in order to be continued.
+    /// </summary>
+    /// <remarks>
+    /// Held in memory on this engine, so it does not survive a restart. That is
+    /// exactly what #13 and #14 exist to fix; this is enough to make suspension
+    /// meaningful within one process.
+    /// </remarks>
+    private sealed record RuntimeState(IReadOnlyList<WorkflowStep> Steps, IWorkflowData Data, object? Input);
 
     /// <summary>
     /// Starts a new instance of a definition and runs it until it completes,
@@ -105,6 +174,7 @@ public sealed class WorkflowEngine
         // fails partway is still queryable. Recording it afterwards would hide
         // exactly the instances an operator needs to find.
         this.instances.Add(instance);
+        this.runtime[instance.Id] = new RuntimeState(steps, data, input);
 
         await this.RunAsync(instance, steps, data, input, cancellationToken).ConfigureAwait(false);
 
