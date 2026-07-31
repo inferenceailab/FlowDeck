@@ -20,4 +20,13 @@ public interface IWorkflowDefinition
     /// Monotonically increasing version for this <see cref="Id"/>.
     /// </summary>
     int Version { get; }
+
+    /// <summary>
+    /// Declares this workflow's steps, in execution order.
+    /// </summary>
+    /// <remarks>
+    /// Called once per instance start rather than cached, so that a definition
+    /// is free to compose its steps from constructor-injected dependencies.
+    /// </remarks>
+    void Build(IWorkflowBuilder builder);
 }
