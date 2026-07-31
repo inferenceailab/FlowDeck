@@ -83,4 +83,17 @@ public interface IWorkflowStore
     /// paging.
     /// </remarks>
     Task<int> CountAsync(InstanceFilter filter, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes terminal instances that reached their final state before
+    /// <paramref name="completedBefore"/>, together with their history.
+    /// </summary>
+    /// <remarks>
+    /// Only terminal instances are eligible. An in-flight instance is never
+    /// removed no matter how old it is: age is not evidence that work is
+    /// finished, and deleting a suspended instance would destroy work that is
+    /// merely waiting.
+    /// </remarks>
+    /// <returns>How many instances were removed.</returns>
+    Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default);
 }

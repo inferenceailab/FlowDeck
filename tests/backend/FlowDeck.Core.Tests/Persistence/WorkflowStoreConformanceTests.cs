@@ -376,6 +376,101 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(0, await store.CountAsync(new InstanceFilter()));
     }
 
+    // -------------------------------------------------------------- purge
+
+    [Fact]
+    public async Task Purging_removes_terminal_instances_older_than_the_cutoff()
+    {
+        var store = await this.CreateStoreAsync();
+        var old = NewRecord(status: InstanceStatus.Completed) with { CompletedAt = T0 };
+        var recent = NewRecord(status: InstanceStatus.Completed) with { CompletedAt = T0.AddDays(40) };
+
+        await store.CreateAsync(old);
+        await store.CreateAsync(recent);
+
+        var removed = await store.PurgeAsync(T0.AddDays(30));
+
+        Assert.Equal(1, removed);
+        Assert.Null(await store.FindAsync(old.Id));
+        Assert.NotNull(await store.FindAsync(recent.Id));
+    }
+
+    [Fact]
+    public async Task Purging_never_removes_an_in_flight_instance()
+    {
+        // Age is not evidence that work is finished. Deleting a suspended
+        // instance would destroy work that is merely waiting.
+        var store = await this.CreateStoreAsync();
+        var ancientRunning = NewRecord(status: InstanceStatus.Running, createdAt: T0.AddYears(-1));
+        var ancientSuspended = NewRecord(status: InstanceStatus.Suspended, createdAt: T0.AddYears(-1));
+
+        await store.CreateAsync(ancientRunning);
+        await store.CreateAsync(ancientSuspended);
+
+        var removed = await store.PurgeAsync(T0.AddYears(1));
+
+        Assert.Equal(0, removed);
+        Assert.NotNull(await store.FindAsync(ancientRunning.Id));
+        Assert.NotNull(await store.FindAsync(ancientSuspended.Id));
+    }
+
+    [Fact]
+    public async Task Purging_removes_failed_and_cancelled_instances_too()
+    {
+        var store = await this.CreateStoreAsync();
+
+        foreach (var status in new[] { InstanceStatus.Completed, InstanceStatus.Failed, InstanceStatus.Cancelled })
+        {
+            await store.CreateAsync(NewRecord(status: status) with { CompletedAt = T0 });
+        }
+
+        Assert.Equal(3, await store.PurgeAsync(T0.AddDays(1)));
+        Assert.Empty(await store.ListAsync(new InstanceFilter()));
+    }
+
+    [Fact]
+    public async Task Purging_removes_the_history_of_purged_instances()
+    {
+        // History outliving its instance would leak storage forever and orphan
+        // rows nothing can join back to.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+        await store.SaveAsync(
+            loaded! with { Status = InstanceStatus.Completed, CompletedAt = T0 },
+            [NewHistory(record.Id, "A")]);
+
+        await store.PurgeAsync(T0.AddDays(1));
+
+        Assert.Empty(await store.GetHistoryAsync(record.Id));
+    }
+
+    [Fact]
+    public async Task Purging_is_idempotent()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Completed) with { CompletedAt = T0 });
+
+        Assert.Equal(1, await store.PurgeAsync(T0.AddDays(1)));
+        Assert.Equal(0, await store.PurgeAsync(T0.AddDays(1)));
+    }
+
+    [Fact]
+    public async Task A_terminal_instance_without_a_completion_time_is_not_purged()
+    {
+        // Defensive: a null CompletedAt on a terminal instance is a data defect,
+        // and guessing its age would delete something on the strength of a bug.
+        var store = await this.CreateStoreAsync();
+        var malformed = NewRecord(status: InstanceStatus.Completed) with { CompletedAt = null };
+
+        await store.CreateAsync(malformed);
+
+        Assert.Equal(0, await store.PurgeAsync(T0.AddYears(10)));
+        Assert.NotNull(await store.FindAsync(malformed.Id));
+    }
+
     // -------------------------------------------------------- isolation
 
     [Fact]
