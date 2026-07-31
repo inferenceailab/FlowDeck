@@ -92,7 +92,7 @@ public static class InstanceEndpoints
             .WithName("GetWorkflowInstance")
             .WithSummary("Retrieves a single workflow instance.");
 
-        instances.MapGet("/", ListAsync)
+        instances.MapGet("", ListAsync)
             .WithName("ListWorkflowInstances")
             .WithSummary("Lists workflow instances, newest first.");
 

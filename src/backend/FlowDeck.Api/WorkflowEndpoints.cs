@@ -41,7 +41,7 @@ public static class WorkflowEndpoints
             .WithName("StartWorkflowInstance")
             .WithSummary("Starts a new instance of a workflow definition.");
 
-        workflows.MapGet("/", ListDefinitionsAsync)
+        workflows.MapGet("", ListDefinitionsAsync)
             .WithName("ListWorkflowDefinitions")
             .WithSummary("Lists the workflow definitions this host has registered.");
 
