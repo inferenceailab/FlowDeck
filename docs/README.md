@@ -9,6 +9,7 @@
 | [Prior art](prior-art.md) | What is borrowed from WorkflowCore, Hangfire and Elsa - and what differs |
 | [Defining a workflow](guides/defining-a-workflow.md) | How to use the library |
 | [Writing a persistence provider](guides/writing-a-persistence-provider.md) | Implementing `IWorkflowStore` |
+| [HTTP API](api.md) | Endpoints, and why they are shaped that way |
 | [API error contract](api-errors.md) | What every error response means |
 | [Deployment](../deploy/README.md) | CI/CD and homelab setup |
 | [Security policy](../SECURITY.md) | Reporting vulnerabilities, enabled protections |

@@ -1,6 +1,6 @@
 # FlowDeck — Architecture
 
-> **Status:** describes what is built as of M2. Sections marked *Planned* are
+> **Status:** describes what is built as of M3. Sections marked *Planned* are
 > not implemented. Where the current implementation is knowingly inadequate,
 > this document says so rather than describing the intended end state as if it
 > existed.
@@ -15,7 +15,7 @@ graph TB
     end
 
     subgraph backend[".NET 10 Backend"]
-        API["HTTP Control Plane<br/><i>M3 - planned</i>"]
+        API["HTTP Control Plane"]
         ENGINE["WorkflowEngine"]
         REGISTRY["WorkflowRegistry"]
         EXECUTOR["StepExecutor"]
@@ -58,7 +58,10 @@ graph TB
 | `WorkflowDataSerializer` | Type-tagged data serialisation | ✅ M2 |
 | `InstancePurger` | Retention sweeping | ✅ M2 |
 | `WorkflowStoreMigrator` | Schema upgrade | ✅ M2 |
-| HTTP control plane | Start, query, cancel over HTTP | ❌ M3 |
+| HTTP control plane | Start, query, list, cancel over HTTP | ✅ M3 |
+| Problem details | RFC 9457 error contract | ✅ M3 |
+| OpenAPI document | Machine-readable API description | ✅ M3 |
+| Health probes | Liveness and readiness | ✅ M3 |
 | Dashboard | Operator UI | ❌ M4 |
 
 ## Execution model
@@ -214,7 +217,9 @@ none.
 | Single node only | No multi-node coordination exists | #39 |
 | Only cancel exists as an operator action | No retry, re-run, or bulk actions | #66 |
 | Resume is not exposed over HTTP or the dashboard | A suspended workflow is only completable in-process | #68 |
-| No authentication | Anything reachable can start workflows | #42 |
+| **No authentication** | Anything reachable can start, inspect and cancel workflows | #42 |
+| Execution history is recorded but not exposed over HTTP | A dashboard cannot show a step timeline yet | — |
+| No rate limiting | A client can start instances as fast as it can send | — |
 | Nothing has been verified by CI | No self-hosted runner is registered; all results are local | — |
 
 ## Technology
