@@ -27,6 +27,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 
 app.MapWorkflowEndpoints();
+app.MapInstanceEndpoints();
 
 await app.RunAsync();
 
