@@ -62,6 +62,41 @@ public sealed record InstancePage(
     int PageSize);
 
 /// <summary>
+/// One step execution, as the API represents it.
+/// </summary>
+/// <param name="Sequence">Position in this instance's history, from 1.</param>
+/// <param name="DurationMs">
+/// How long the step took. Computed here rather than left to each client, so
+/// every consumer agrees on it.
+/// </param>
+public sealed record StepHistoryResponse(
+    int Sequence,
+    string StepName,
+    DateTimeOffset StartedAt,
+    DateTimeOffset CompletedAt,
+    double DurationMs,
+    StepStatus Status,
+    string? ErrorType,
+    string? ErrorMessage)
+{
+    /// <summary>Projects a stored history entry for the wire.</summary>
+    public static StepHistoryResponse From(StepHistoryEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return new StepHistoryResponse(
+            entry.Sequence,
+            entry.StepName,
+            entry.StartedAt,
+            entry.CompletedAt,
+            (entry.CompletedAt - entry.StartedAt).TotalMilliseconds,
+            entry.Status,
+            entry.ErrorType,
+            entry.ErrorMessage);
+    }
+}
+
+/// <summary>
 /// HTTP surface for inspecting and operating on instances.
 /// </summary>
 public static class InstanceEndpoints
@@ -100,7 +135,37 @@ public static class InstanceEndpoints
             .WithName("CancelWorkflowInstance")
             .WithSummary("Stops a workflow instance permanently.");
 
+        instances.MapGet("/{instanceId:guid}/history", GetHistoryAsync)
+            .WithName("GetWorkflowInstanceHistory")
+            .WithSummary("Reads an instance's execution history, in order.");
+
         return endpoints;
+    }
+
+    /// <summary>
+    /// Reads an instance's execution history.
+    /// </summary>
+    /// <remarks>
+    /// Returns an empty array for an unknown instance rather than 404. History
+    /// removed by retention (#20) is not an exceptional case, and the store
+    /// already behaves this way - a 404 here would make a purged instance look
+    /// like a client error.
+    ///
+    /// <para>
+    /// Unpaged. A workflow with thousands of attempts would return a large
+    /// array, which becomes real once retries (#37) exist; no workflow today
+    /// produces enough entries to justify the interface now. Recorded in
+    /// <c>docs/api.md</c> rather than left as a surprise.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> GetHistoryAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        CancellationToken cancellationToken = default)
+    {
+        var history = await engine.GetHistoryAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return Results.Ok(history.Select(StepHistoryResponse.From).ToArray());
     }
 
     /// <summary>
