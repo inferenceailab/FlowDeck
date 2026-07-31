@@ -157,6 +157,15 @@
                   -->
                   <span class="entry-status">{{ entry.status }}</span>
 
+                  <!--
+                    Only from the second attempt. Every row on an ordinary run
+                    is attempt 1, so badging all of them would add noise to the
+                    common case to serve the rare one.
+                  -->
+                  @if (isRetry(entry)) {
+                    <span class="entry-attempt" i18n>attempt {{ entry.attempt }}</span>
+                  }
+
                   <span class="entry-duration">
                     {{ entry.durationMs | number: '1.0-1' }}<span i18n>ms</span>
                   </span>

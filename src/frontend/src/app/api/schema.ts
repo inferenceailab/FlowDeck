@@ -155,6 +155,8 @@ export interface components {
             /** Format: double */
             durationMs: number | string;
             status: components["schemas"]["StepStatus"];
+            /** Format: int32 */
+            attempt: number | string;
             errorType: null | string;
             errorMessage: null | string;
         };

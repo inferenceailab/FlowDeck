@@ -52,6 +52,7 @@ public abstract class WorkflowStoreConformanceTests
         StartedAt = T0,
         CompletedAt = T0.AddSeconds(1),
         Status = StepStatus.Success,
+        Attempt = 1,
     };
 
     // ------------------------------------------------------------- create
@@ -178,6 +179,29 @@ public abstract class WorkflowStoreConformanceTests
 
         Assert.Equal(["A", "B", "C"], history.Select(entry => entry.StepName));
         Assert.Equal([1, 2, 3], history.Select(entry => entry.Sequence));
+    }
+
+    [SkippableFact]
+    public async Task The_attempt_number_round_trips_on_history()
+    {
+        // #107, and the same lesson as #106: the row/record mapping is where a
+        // field silently disappears. An attempt number that reads back as zero
+        // makes a retried step indistinguishable from a re-entered one.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+
+        await store.SaveAsync(loaded!, [
+            NewHistory(record.Id, "charge") with { Attempt = 1, Status = StepStatus.Failed },
+            NewHistory(record.Id, "charge") with { Attempt = 2, Status = StepStatus.Failed },
+            NewHistory(record.Id, "charge") with { Attempt = 3 },
+        ]);
+
+        var history = await store.GetHistoryAsync(record.Id);
+
+        Assert.Equal([1, 2, 3], history.Select(entry => entry.Attempt));
     }
 
     [SkippableFact]

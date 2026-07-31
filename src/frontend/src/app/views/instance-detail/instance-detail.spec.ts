@@ -44,6 +44,7 @@ describe('InstanceDetail', () => {
     completedAt: '2026-07-31T12:00:01+00:00',
     durationMs: 1000,
     status: 'Success',
+    attempt: 1,
     errorType: null,
     errorMessage: null,
     ...overrides,
@@ -83,6 +84,33 @@ describe('InstanceDetail', () => {
       'charge',
       'ship',
     ]);
+  });
+
+  it('marks retried attempts so repeated rows are not read as duplicates', () => {
+    // #107. Three rows for one step is ambiguous without this: it reads
+    // identically to a rendering bug, or to a step re-entered by a resume.
+    respond(instance({ status: 'Failed', failedStepName: 'charge' }), [
+      step(1, 'charge', { attempt: 1, status: 'Failed' }),
+      step(2, 'charge', { attempt: 2, status: 'Failed' }),
+      step(3, 'charge', { attempt: 3, status: 'Failed' }),
+    ]);
+
+    const attempts: HTMLElement[] = Array.from(
+      fixture.nativeElement.querySelectorAll('.timeline-entry .entry-attempt'),
+    );
+
+    expect(attempts.map((entry) => entry.textContent?.trim())).toEqual([
+      'attempt 2',
+      'attempt 3',
+    ]);
+  });
+
+  it('does not label the first attempt', () => {
+    // Every row on an ordinary run is attempt 1. Badging all of them would add
+    // noise to the common case to serve the rare one.
+    respond(instance(), [step(1, 'validate'), step(2, 'charge')]);
+
+    expect(fixture.nativeElement.querySelectorAll('.entry-attempt').length).toBe(0);
   });
 
   it('calls out the failing step and its error', () => {
