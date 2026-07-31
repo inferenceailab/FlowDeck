@@ -10,11 +10,17 @@ namespace FlowDeck.Core.Tests;
 /// </summary>
 public class WorkflowRegistryTests
 {
+    /// <summary>
+    /// The registry stores definitions without compiling them, so these doubles
+    /// declare a step only to satisfy the interface.
+    /// </summary>
     private sealed class OrderFulfilment : IWorkflowDefinition
     {
         public string Id => "order-fulfilment";
 
         public int Version => 1;
+
+        public void Build(IWorkflowBuilder builder) => builder.AddStep("noop", () => new NoopStep());
     }
 
     private sealed class OrderFulfilmentV2 : IWorkflowDefinition
@@ -22,6 +28,14 @@ public class WorkflowRegistryTests
         public string Id => "order-fulfilment";
 
         public int Version => 2;
+
+        public void Build(IWorkflowBuilder builder) => builder.AddStep("noop", () => new NoopStep());
+    }
+
+    private sealed class NoopStep : IStepBody
+    {
+        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Outcome.Next);
     }
 
     [Fact]
@@ -99,5 +113,7 @@ public class WorkflowRegistryTests
         public string Id { get; } = id;
 
         public int Version => 1;
+
+        public void Build(IWorkflowBuilder builder) => builder.AddStep("noop", () => new NoopStep());
     }
 }
