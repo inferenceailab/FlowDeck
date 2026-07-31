@@ -10,4 +10,7 @@
     <Project Path="tests/backend/FlowDeck.Api.Tests/FlowDeck.Api.Tests.csproj" />
     <Project Path="tests/backend/FlowDeck.Core.Tests/FlowDeck.Core.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/specs/">
+    <Project Path="tests/specs/FlowDeck.Specs/FlowDeck.Specs.csproj" />
+  </Folder>
 </Solution>
