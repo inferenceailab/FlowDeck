@@ -103,6 +103,32 @@ A value explicitly set to `null` is **present**, not absent — `Contains` retur
 true and `TryGet` succeeds. That lets a step distinguish "cleared" from "never
 written".
 
+### What can be stored
+
+Once instances are persisted, workflow data has to survive a round trip through
+storage. Types allowed out of the box:
+
+`string` · `bool` · `byte` · `short` · `int` · `long` · `float` · `double` ·
+`decimal` · `Guid` · `DateTime` · `DateTimeOffset` · `TimeSpan` · `byte[]`
+
+Anything else must be registered:
+
+```csharp
+var serializer = new WorkflowDataSerializer(
+    new WorkflowDataSerializerOptions().Allow<OrderDetails>());
+
+var store  = new InMemoryWorkflowStore(serializer);
+var engine = new WorkflowEngine(registry, store: store);
+```
+
+Storing an unregistered type raises `WorkflowDataSerializationException` naming
+the key, **at the moment the value is stored** — not later when a read cannot
+reconstruct it.
+
+The allow-list is deliberate rather than convenient: a stored type name is
+resolved on read, and resolving arbitrary names is how deserialisation
+vulnerabilities work. See [ADR-0014](../adr/0014-workflow-data-serialisation.md).
+
 ## Typed input
 
 Implement `IWorkflowDefinition<TInput>` to require input:

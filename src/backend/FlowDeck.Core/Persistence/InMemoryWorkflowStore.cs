@@ -21,7 +21,7 @@ namespace FlowDeck.Core.Persistence;
 /// irrelevant for the scale this is used at, and correctness is not.
 /// </para>
 /// </remarks>
-public sealed class InMemoryWorkflowStore : IWorkflowStore
+public sealed class InMemoryWorkflowStore(WorkflowDataSerializer? serializer = null) : IWorkflowStore
 {
     private readonly Lock gate = new();
     private readonly Dictionary<Guid, WorkflowInstanceRecord> instances = [];
@@ -170,6 +170,17 @@ public sealed class InMemoryWorkflowStore : IWorkflowStore
     /// database-backed provider - which is exactly what the conformance suite
     /// exists to prevent.
     /// </remarks>
-    private static WorkflowInstanceRecord Copy(WorkflowInstanceRecord record) =>
-        record with { Data = new Dictionary<string, object?>(record.Data, StringComparer.Ordinal) };
+    private WorkflowInstanceRecord Copy(WorkflowInstanceRecord record)
+    {
+        // When a serialiser is supplied, data round-trips through it on every
+        // store and load, so this double behaves like a text-backed provider.
+        // A workflow holding an unserialisable value then fails in the fast
+        // test suite instead of only in production against #17.
+        if (serializer is not null)
+        {
+            return record with { Data = serializer.Deserialize(serializer.Serialize(record.Data)) };
+        }
+
+        return record with { Data = new Dictionary<string, object?>(record.Data, StringComparer.Ordinal) };
+    }
 }
