@@ -368,7 +368,9 @@
           "Suspended",
           "Completed",
           "Failed",
-          "Cancelled"
+          "Cancelled",
+          "Compensated",
+          "CompensationFailed"
         ]
       },
       "StartInstanceResponse": {

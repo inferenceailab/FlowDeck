@@ -119,7 +119,9 @@ public sealed class WorkflowInstance
     public bool IsTerminal => this.Status
         is InstanceStatus.Completed
         or InstanceStatus.Failed
-        or InstanceStatus.Cancelled;
+        or InstanceStatus.Cancelled
+        or InstanceStatus.Compensated
+        or InstanceStatus.CompensationFailed;
 
     /// <summary>Projects this instance into its durable form.</summary>
     internal WorkflowInstanceRecord ToRecord(IWorkflowData data, object? input) => new()

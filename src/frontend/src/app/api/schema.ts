@@ -138,7 +138,7 @@ export interface components {
             errorMessage: null | string;
         };
         /** @enum {unknown} */
-        InstanceStatus: "Running" | "Suspended" | "Completed" | "Failed" | "Cancelled";
+        InstanceStatus: "Running" | "Suspended" | "Completed" | "Failed" | "Cancelled" | "Compensated" | "CompensationFailed";
         StartInstanceResponse: {
             /** Format: uuid */
             instanceId: string;
