@@ -35,14 +35,37 @@ public sealed class WorkflowEngine
     /// <exception cref="InvalidWorkflowDefinitionException">
     /// The definition declares no steps, or declares a duplicate step name.
     /// </exception>
+    public Task<WorkflowInstance> StartAsync(
+        string definitionId,
+        int version,
+        CancellationToken cancellationToken = default) =>
+        this.StartAsync(definitionId, version, input: null, cancellationToken);
+
+    /// <summary>
+    /// Starts a new instance with input and runs it until it completes,
+    /// suspends or fails.
+    /// </summary>
+    /// <exception cref="DefinitionNotFoundException">No such definition.</exception>
+    /// <exception cref="InvalidInputTypeException">
+    /// The input does not match what the definition declares.
+    /// </exception>
+    /// <exception cref="InvalidWorkflowDefinitionException">
+    /// The definition declares no steps, or declares a duplicate step name.
+    /// </exception>
     public async Task<WorkflowInstance> StartAsync(
         string definitionId,
         int version,
+        object? input,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(definitionId);
 
         var definition = this.registry.Get(definitionId, version);
+
+        // Validated before anything is constructed, so a mismatched start
+        // cannot leave a half-built instance behind.
+        ValidateInput(definition, input);
+
         var steps = Compile(definition);
 
         var instance = new WorkflowInstance(
@@ -53,9 +76,43 @@ public sealed class WorkflowEngine
         // see each other's writes.
         var data = new WorkflowData();
 
-        await this.RunAsync(instance, steps, data, cancellationToken).ConfigureAwait(false);
+        await this.RunAsync(instance, steps, data, input, cancellationToken).ConfigureAwait(false);
 
         return instance;
+    }
+
+    /// <summary>
+    /// Checks the supplied input against what the definition declares.
+    /// </summary>
+    /// <remarks>
+    /// Both directions are errors. A missing required input would surface as a
+    /// null inside step code far from its cause, and an input handed to a
+    /// definition that declares none would be silently discarded, leaving the
+    /// author believing it was delivered.
+    /// </remarks>
+    private static void ValidateInput(IWorkflowDefinition definition, object? input)
+    {
+        var expected = definition.InputType;
+
+        if (expected is null)
+        {
+            if (input is not null)
+            {
+                throw new InvalidInputTypeException(definition.Id, null, input.GetType());
+            }
+
+            return;
+        }
+
+        if (input is null)
+        {
+            throw new InvalidInputTypeException(definition.Id, expected, null);
+        }
+
+        if (!expected.IsInstanceOfType(input))
+        {
+            throw new InvalidInputTypeException(definition.Id, expected, input.GetType());
+        }
     }
 
     /// <summary>
@@ -75,6 +132,7 @@ public sealed class WorkflowEngine
         WorkflowInstance instance,
         IReadOnlyList<WorkflowStep> steps,
         IWorkflowData data,
+        object? input,
         CancellationToken cancellationToken)
     {
         while (instance.CurrentStepIndex < steps.Count)
@@ -84,7 +142,7 @@ public sealed class WorkflowEngine
             var step = steps[instance.CurrentStepIndex];
             instance.CurrentStepName = step.Name;
 
-            var context = new StepContext(instance.Id, step.Name, data);
+            var context = new StepContext(instance.Id, step.Name, data, input);
             var result = await this.executor
                 .ExecuteAsync(step.BodyFactory(), context, cancellationToken)
                 .ConfigureAwait(false);

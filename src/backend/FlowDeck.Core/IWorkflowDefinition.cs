@@ -22,6 +22,18 @@ public interface IWorkflowDefinition
     int Version { get; }
 
     /// <summary>
+    /// The input type this workflow requires, or <see langword="null"/> if it
+    /// takes none.
+    /// </summary>
+    /// <remarks>
+    /// Declared rather than discovered by reflection so the engine can reject a
+    /// mismatched start before any step runs, and so the HTTP layer (#23) can
+    /// validate a request body without starting an instance. Implement
+    /// <see cref="IWorkflowDefinition{TInput}"/> rather than overriding this.
+    /// </remarks>
+    Type? InputType => null;
+
+    /// <summary>
     /// Declares this workflow's steps, in execution order.
     /// </summary>
     /// <remarks>

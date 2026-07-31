@@ -36,6 +36,13 @@ public interface IStepContext
     /// State shared by the steps of this instance, and only this instance.
     /// </summary>
     IWorkflowData Data { get; }
+
+    /// <summary>
+    /// The input this instance was started with, or <see langword="null"/> if
+    /// the definition takes none. Read it with
+    /// <see cref="StepContextExtensions.GetInput{TInput}"/>.
+    /// </summary>
+    object? Input => null;
 }
 
 /// <summary>
@@ -61,7 +68,11 @@ public interface IStepBody
 /// <summary>
 /// Minimal <see cref="IStepContext"/> implementation.
 /// </summary>
-public sealed record StepContext(Guid InstanceId, string StepName, IWorkflowData Data) : IStepContext
+public sealed record StepContext(
+    Guid InstanceId,
+    string StepName,
+    IWorkflowData Data,
+    object? Input = null) : IStepContext
 {
     /// <summary>
     /// Convenience for tests and callers that do not exercise workflow data.
