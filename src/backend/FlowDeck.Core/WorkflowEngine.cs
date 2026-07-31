@@ -48,7 +48,12 @@ public sealed class WorkflowEngine
         var instance = new WorkflowInstance(
             Guid.NewGuid(), definition.Id, definition.Version, this.timeProvider.GetUtcNow());
 
-        await this.RunAsync(instance, steps, cancellationToken).ConfigureAwait(false);
+        // One store per instance. Constructed here rather than shared on the
+        // engine so that concurrent instances of the same definition cannot
+        // see each other's writes.
+        var data = new WorkflowData();
+
+        await this.RunAsync(instance, steps, data, cancellationToken).ConfigureAwait(false);
 
         return instance;
     }
@@ -69,6 +74,7 @@ public sealed class WorkflowEngine
     private async Task RunAsync(
         WorkflowInstance instance,
         IReadOnlyList<WorkflowStep> steps,
+        IWorkflowData data,
         CancellationToken cancellationToken)
     {
         while (instance.CurrentStepIndex < steps.Count)
@@ -78,7 +84,7 @@ public sealed class WorkflowEngine
             var step = steps[instance.CurrentStepIndex];
             instance.CurrentStepName = step.Name;
 
-            var context = new StepContext(instance.Id, step.Name);
+            var context = new StepContext(instance.Id, step.Name, data);
             var result = await this.executor
                 .ExecuteAsync(step.BodyFactory(), context, cancellationToken)
                 .ConfigureAwait(false);
