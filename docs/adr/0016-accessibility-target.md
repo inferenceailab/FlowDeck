@@ -44,6 +44,13 @@ suite. A violation fails the build.
   meant to avoid.
 - Manual keyboard-only walkthroughs are still required before calling a view
   done, and the Definition of Done for M4 stories says so.
+- **Colour contrast is not actually checked**, discovered when implementing
+  #31. Angular 22 runs tests on Vitest in jsdom, which has no layout engine, so
+  axe cannot compute rendered colours and skips the `color-contrast` rule.
+  The ratios in `styles.css` are asserted by comment, not by test. Closing this
+  needs a browser-backed run (`@vitest/browser-playwright`, which pulls in a
+  browser download) or a standalone contrast check. Recorded rather than left
+  implied by "axe runs in CI".
 - Some component choices are constrained — a custom dropdown that cannot be
   operated by keyboard is not an option.
 - WCAG 2.2 AA is a *floor*, not a ceiling.

@@ -1,0 +1,37 @@
+import { Routes } from '@angular/router';
+
+/**
+ * Application routes.
+ *
+ * Views are lazily loaded so the shell renders before their code is fetched.
+ * With two views that saves little; establishing it now means it does not have
+ * to be retrofitted once the designer (#40) arrives.
+ *
+ * Each route sets a title, so a browser tab and the accessible page name say
+ * where you are rather than all reading "flowdeck-dashboard".
+ */
+export const routes: Routes = [
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'instances',
+  },
+  {
+    path: 'instances',
+    title: 'Instances - FlowDeck',
+    loadComponent: () => import('./views/instance-list/instance-list').then((m) => m.InstanceList),
+  },
+  {
+    path: 'workflows',
+    title: 'Workflows - FlowDeck',
+    loadComponent: () => import('./views/workflow-list/workflow-list').then((m) => m.WorkflowList),
+  },
+  {
+    // A wildcard rather than a silent redirect home: a mistyped URL should say
+    // so, not quietly land somewhere plausible and leave the operator
+    // wondering why the page is not what they expected.
+    path: '**',
+    title: 'Not found - FlowDeck',
+    loadComponent: () => import('./views/not-found/not-found').then((m) => m.NotFound),
+  },
+];
