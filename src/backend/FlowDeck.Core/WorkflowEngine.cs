@@ -15,8 +15,12 @@ public sealed class WorkflowEngine
     private readonly WorkflowRegistry registry;
     private readonly StepExecutor executor;
     private readonly TimeProvider timeProvider;
+    private readonly IInstanceStore instances;
 
-    public WorkflowEngine(WorkflowRegistry registry, TimeProvider? timeProvider = null)
+    public WorkflowEngine(
+        WorkflowRegistry registry,
+        TimeProvider? timeProvider = null,
+        IInstanceStore? instanceStore = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -25,7 +29,28 @@ public sealed class WorkflowEngine
 
         // Injectable so #8 can assert on timestamps without sleeping.
         this.timeProvider = timeProvider ?? TimeProvider.System;
+
+        // Injectable so #17 can substitute a durable store without changing
+        // the engine.
+        this.instances = instanceStore ?? new InMemoryInstanceStore();
     }
+
+    /// <summary>
+    /// Retrieves an instance by id.
+    /// </summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    public WorkflowInstance GetInstance(Guid instanceId) => this.instances.Get(instanceId);
+
+    /// <summary>
+    /// Retrieves an instance by id if it exists.
+    /// </summary>
+    public bool TryGetInstance(Guid instanceId, out WorkflowInstance? instance) =>
+        this.instances.TryGet(instanceId, out instance);
+
+    /// <summary>
+    /// Every instance this engine has started, most recently created first.
+    /// </summary>
+    public IReadOnlyCollection<WorkflowInstance> GetInstances() => this.instances.GetAll();
 
     /// <summary>
     /// Starts a new instance of a definition and runs it until it completes,
@@ -75,6 +100,11 @@ public sealed class WorkflowEngine
         // engine so that concurrent instances of the same definition cannot
         // see each other's writes.
         var data = new WorkflowData();
+
+        // Recorded before execution starts, so an instance that suspends or
+        // fails partway is still queryable. Recording it afterwards would hide
+        // exactly the instances an operator needs to find.
+        this.instances.Add(instance);
 
         await this.RunAsync(instance, steps, data, input, cancellationToken).ConfigureAwait(false);
 
