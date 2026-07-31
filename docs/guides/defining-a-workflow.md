@@ -347,8 +347,139 @@ retry would report a failure that did not happen.
 - **A host that dies mid-retry does not recover.** The attempt count is durable,
   so the ceiling still applies, but the instance is left `Running` and nothing
   resumes it yet (#39).
-- **Nothing is undone.** A step that exhausts its attempts fails the instance and
-  the steps that already succeeded stay done. That is compensation (#38).
+- **Nothing is undone by retry alone.** A step that exhausts its attempts fails
+  the instance. Undoing what already succeeded is [Compensation](#compensation),
+  below.
+
+## Compensation
+
+A workflow that fails partway has already done things. An order workflow that
+charged a card and then failed to ship has taken money for goods it cannot
+deliver.
+
+Declare how a step is undone, beside the step:
+
+```csharp
+builder
+    .AddStep("reserve-stock", () => new ReserveStock(orders))
+        .WithCompensation(() => new ReleaseStock(orders))
+    .AddStep("charge", () => new Charge(orders))
+        .WithCompensation(() => new Refund(orders))
+    .AddStep("ship", () => new Ship(orders));
+```
+
+If `ship` throws, the engine runs `Refund` and then `ReleaseStock`, and the
+instance ends as `Compensated`.
+
+**Declaring the action is the whole opt-in.** There is no second switch — a
+workflow carrying undo actions that do not run would look protected and not be.
+
+`WithCompensation` applies to the step **just declared**, unlike
+`WithRetryPolicy`, which sets a forward default for steps after it. A retry
+policy is a sensible thing to apply broadly; an undo action is specific to the
+one thing it undoes.
+
+### Rollback runs in reverse
+
+Most recent first. Later steps may depend on what earlier ones did, so releasing
+the stock before refunding the charge that paid for it inverts a dependency the
+forward pass established.
+
+Steps with no compensating action are **skipped, not failed**. Most steps have
+nothing to undo.
+
+Steps that never executed are not compensated either — undoing work that never
+happened would act on the world based on nothing.
+
+### A step that exhausted its retries is still compensated
+
+Exactly **once**, however many attempts it made.
+
+*Not zero*, because a step that never reported success may still have had an
+effect — the charge that reached the gateway and then timed out on the response.
+Skipping it would be wrong exactly where it matters most.
+
+*Not once per attempt*, because [retried steps must be idempotent](#your-step-must-be-idempotent),
+which means the attempts shared one idempotency key and therefore one side
+effect. One undo covers it.
+
+### Rollback does not stop at a failing action
+
+If a compensating action throws, the engine records it and **continues** to the
+next one.
+
+Stopping would leave *more* un-undone work than continuing: refusing to refund
+the card because releasing stock failed adds a second unresolved side effect to
+the first.
+
+The cost is real. If one action failed because a service is down, the next may
+fail for the same reason, and the engine will keep trying anyway. This is the
+better default, not a safe one.
+
+Note the asymmetry: the **forward** pass stops at the first failure, the
+**reverse** pass does not.
+
+### Compensation is best-effort
+
+The engine tries everything and reports honestly. It does not guarantee the
+world is back where it started, and no engine can — your compensating action
+talks to systems FlowDeck knows nothing about.
+
+Practically, that means:
+
+- A compensating action **must be idempotent** too, for the same reason a
+  retried step must be. Nothing prevents it running after a partial earlier run.
+- `CompensationFailed` means **you have work to do**. The engine cannot say how
+  partly an instance rolled back; only its history can, so read the timeline.
+- If undoing a step reliably matters more than the engine can promise, build
+  reconciliation. Compensation reduces how often you need it; it does not
+  remove the need.
+
+### The statuses it produces
+
+| Status | Meaning |
+| --- | --- |
+| `Failed` | A step failed and nothing was rolled back |
+| `Compensated` | A step failed and every compensating action succeeded |
+| `CompensationFailed` | A step failed and at least one action also failed |
+
+All three are terminal. The instance stays `Running` *during* the rollback, so
+compensation always happens before a terminal state, never after.
+
+`Compensated` requires something to have been undone: a workflow with no
+compensating actions still reports `Failed`.
+
+The original failure survives the rollback. `FailedStepName`, `ErrorType` and
+`ErrorMessage` describe the step that broke, not a compensating action that also
+failed — you need to know why it failed, not just that the cleanup did.
+
+### Rollback in the history
+
+Each compensating action appends an entry named `compensate:<step>`:
+
+```csharp
+foreach (var entry in await engine.GetHistoryAsync(instance.Id))
+{
+    Console.WriteLine($"{entry.StepName}: {entry.Status}");
+}
+
+// reserve-stock: Success
+// charge: Success
+// ship: Failed
+// compensate:charge: Success
+// compensate:reserve-stock: Failed
+```
+
+That last line is the whole point of recording them: the refund happened, the
+stock release did not, and an operator can see which is which.
+
+### Cancelling does not compensate
+
+Cancelling an instance stops it. It does **not** roll it back.
+
+An operator cancelling a workflow may be stopping it to fix forward, and an
+automatic rollback would destroy work they meant to keep. Whether that should be
+an explicit choice is #124, not settled by the engine's default.
 
 ## Querying and cancelling
 
@@ -417,8 +548,10 @@ Two things to know:
 | `Running` | Executing, or ready to continue |
 | `Suspended` | Parked on a step, awaiting resume |
 | `Completed` | Every step advanced |
-| `Failed` | A step threw |
+| `Failed` | A step threw, and nothing was rolled back |
 | `Cancelled` | Stopped by an operator |
+| `Compensated` | A step threw, and every compensating action succeeded |
+| `CompensationFailed` | A step threw, and a compensating action failed too |
 
 `CreatedAt` is set at start; `CompletedAt` when terminal. Both are UTC.
 `IsTerminal` covers `Completed`, `Failed` and `Cancelled`.
@@ -453,7 +586,8 @@ caught separately from faults thrown by your step code.
 | --- | --- |
 | A retry backoff blocks the calling task | #39 |
 | An instance left `Running` by a crash is never resumed | #39 |
-| No compensation or rollback | #38 |
+| A rollback interrupted by a crash does not resume | #39 |
+| Cancelling an instance does not roll it back | #124 |
 | Single node only | #39 |
 | A suspended instance cannot be resumed over HTTP | #68 |
 | No authentication on the API | #42 |

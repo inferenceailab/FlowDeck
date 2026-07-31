@@ -93,9 +93,16 @@ states steps are implemented directly in C# initially, so a designer that
 
 | ID | Requirement | Milestone |
 | --- | --- | --- |
-| FR-3.1 | Failed steps retry according to a declared policy | M5 |
-| FR-3.2 | Completed steps can be compensated on later failure | M5 |
+| FR-3.1 | Failed steps retry according to a declared policy | M5 ✅ |
+| FR-3.2 | Completed steps can be compensated on later failure | M5 ✅ |
 | FR-3.3 | Multiple nodes share execution without double-running | M6 |
+
+FR-3.1 and FR-3.2 are **best-effort by design**, and the limits are stated in
+[ADR-0020](adr/0020-retry-semantics.md) and
+[ADR-0021](adr/0021-compensation-semantics.md) rather than left to be
+discovered. A retry backoff blocks the calling task, a host that dies mid-retry
+or mid-rollback leaves an instance nothing resumes (#39), and compensation does
+not guarantee the world is back where it started.
 
 ### FR-4 — Control plane and dashboard
 
@@ -190,7 +197,11 @@ engine takes an injectable `TimeProvider` and an injectable instance store.
 Third-party dependencies are minimised deliberately. GitHub Actions are pinned
 to full commit SHAs and restricted to GitHub-owned and verified creators;
 container images build through the Docker CLI rather than marketplace actions.
-A test-only clock was hand-rolled rather than taking a package dependency.
+
+The principle is a judgement per case, not a rule: a hand-rolled test clock was
+reversed in favour of `Microsoft.Extensions.TimeProvider.Testing` once retry
+needed controllable timers rather than only a clock. See
+[ADR-0010](adr/0010-minimise-third-party-dependencies.md).
 
 ### NFR-6 — Deployment
 
