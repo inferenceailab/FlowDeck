@@ -1,0 +1,176 @@
+name: CI
+
+# Runs on every pull request into main, and on main itself after merge.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The repository default is read-only; each job narrows further where it can.
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  # --------------------------------------------------------------- backend
+  backend:
+    name: Backend (.NET 10)
+    runs-on: self-hosted
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Phase 3 has not created the solution yet. Until it does, the build
+      # steps below are skipped rather than failing the pipeline.
+      # .NET 10 scaffolds the XML solution format (.slnx) by default, so both
+      # extensions must be matched. Globbing only *.sln silently skips the
+      # entire backend build.
+      - name: Detect backend solution
+        id: detect
+        shell: bash
+        run: |
+          if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \
+             || compgen -G 'src/backend/*.sln' >/dev/null || compgen -G 'src/backend/*.slnx' >/dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No .sln or .slnx found yet - backend build skipped until Phase 3 lands."
+          fi
+
+      - name: Set up .NET
+        if: steps.detect.outputs.found == 'true'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        if: steps.detect.outputs.found == 'true'
+        run: dotnet restore
+
+      - name: Build
+        if: steps.detect.outputs.found == 'true'
+        run: dotnet build --no-restore --configuration Release
+
+      # Warnings are errors in CI so that lint debt cannot accumulate silently.
+      - name: Verify formatting
+        if: steps.detect.outputs.found == 'true'
+        run: dotnet format --verify-no-changes --severity warn
+
+      - name: Test
+        if: steps.detect.outputs.found == 'true'
+        run: >-
+          dotnet test --no-build --configuration Release
+          --logger trx --results-directory artifacts/test-results
+          --collect:"XPlat Code Coverage"
+
+      - name: Upload test results
+        if: always() && steps.detect.outputs.found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-test-results
+          path: artifacts/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # -------------------------------------------------------------- frontend
+  frontend:
+    name: Frontend (Angular 22)
+    runs-on: self-hosted
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect frontend project
+        id: detect
+        shell: bash
+        run: |
+          if [ -f src/frontend/package.json ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No src/frontend/package.json yet - frontend build skipped until Phase 3 lands."
+          fi
+
+      - name: Set up Node
+        if: steps.detect.outputs.found == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.detect.outputs.found == 'true'
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: Lint
+        if: steps.detect.outputs.found == 'true'
+        working-directory: src/frontend
+        run: npm run lint
+
+      # ChromeHeadless must be available on the self-hosted runner.
+      - name: Test
+        if: steps.detect.outputs.found == 'true'
+        working-directory: src/frontend
+        run: npm run test -- --watch=false --browsers=ChromeHeadless
+
+      - name: Build
+        if: steps.detect.outputs.found == 'true'
+        working-directory: src/frontend
+        run: npm run build -- --configuration production
+
+  # -------------------------------------------------------------- security
+  # GitHub-side secret scanning and push protection already cover this repo.
+  # This job is defence in depth: it catches a secret in a PR branch before
+  # review, and covers pattern classes gitleaks knows that GitHub does not.
+  secrets:
+    name: Secret scan
+    runs-on: self-hosted
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Scan with gitleaks
+        shell: bash
+        run: |
+          if ! command -v gitleaks >/dev/null 2>&1; then
+            echo "::error::gitleaks is not installed on this runner. Install it (scoop install gitleaks) and re-run."
+            exit 1
+          fi
+          gitleaks git --redact --no-banner --verbose
+
+  # ------------------------------------------------------------------ gate
+  # Single required status check. Branch rulesets can point at this one job
+  # instead of being updated every time a matrix leg is added or renamed.
+  ci-passed:
+    name: CI passed
+    runs-on: self-hosted
+    needs: [backend, frontend, secrets]
+    if: always()
+    steps:
+      - name: Fail if any upstream job did not succeed
+        shell: bash
+        run: |
+          echo "backend:  ${{ needs.backend.result }}"
+          echo "frontend: ${{ needs.frontend.result }}"
+          echo "secrets:  ${{ needs.secrets.result }}"
+          if [ "${{ needs.backend.result }}"  != "success" ] || \
+             [ "${{ needs.frontend.result }}" != "success" ] || \
+             [ "${{ needs.secrets.result }}"  != "success" ]; then
+            echo "::error::One or more CI jobs failed."
+            exit 1
+          fi

@@ -1,0 +1,76 @@
+# FlowDeck homelab deployment.
+#
+# Driven by .github/workflows/cd.yml, which sets IMAGE_PREFIX and IMAGE_TAG.
+# Run manually with:  IMAGE_TAG=<sha> docker compose up -d
+#
+# Secrets are read from a local .env file that is never committed - see
+# .env.example. The .gitignore in this repository already excludes .env.
+
+name: flowdeck
+
+services:
+  api:
+    image: ${IMAGE_PREFIX:-ghcr.io/inferenceailab/flowdeck}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__FlowDeck: ${FLOWDECK_DB_CONNECTION:?FLOWDECK_DB_CONNECTION is required}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8080/health/ready']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports:
+      - '${API_PORT:-8080}:8080'
+    # Hardening: the API needs no write access to its own filesystem and no
+    # privilege escalation. tmpfs covers the paths .NET genuinely writes to.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/inferenceailab/flowdeck}/web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '${WEB_PORT:-8081}:8080'
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flowdeck}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-flowdeck} -d ${POSTGRES_DB:-flowdeck}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - flowdeck-db:/var/lib/postgresql/data
+    # Not published to the host: only the api service needs to reach it.
+    expose:
+      - '5432'
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  flowdeck-db:
