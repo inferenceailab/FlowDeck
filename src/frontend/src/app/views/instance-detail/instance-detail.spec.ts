@@ -113,6 +113,93 @@ describe('InstanceDetail', () => {
     expect(fixture.nativeElement.querySelectorAll('.entry-attempt').length).toBe(0);
   });
 
+  it('marks rollback entries as rollback, not as ordinary steps', () => {
+    // #122. Without this, "compensate:charge" appears in the timeline as a step
+    // the author never declared, and the run reads as having executed
+    // something that does not exist in the definition.
+    respond(instance({ status: 'Compensated', failedStepName: 'ship' }), [
+      step(1, 'charge'),
+      step(2, 'ship', { status: 'Failed', errorMessage: 'no carrier' }),
+      step(3, 'compensate:charge'),
+    ]);
+
+    const entries: HTMLElement[] = Array.from(
+      fixture.nativeElement.querySelectorAll('.timeline-entry'),
+    );
+
+    expect(entries[2].classList).toContain('entry-rollback');
+
+    // The prefix is a wire detail. The operator reads the step name.
+    const names = entries.map((entry) => entry.querySelector('.entry-step')?.textContent?.trim());
+    expect(names).toEqual(['charge', 'ship', 'charge']);
+
+    expect(entries[2].textContent).toContain('rolled back');
+    expect(entries[0].classList).not.toContain('entry-rollback');
+  });
+
+  it('calls out a partial rollback and names what failed', () => {
+    // CompensationFailed is the one status that always needs a human, and the
+    // thing they need is which undo did not happen.
+    respond(instance({ status: 'CompensationFailed', failedStepName: 'ship' }), [
+      step(1, 'charge'),
+      step(2, 'ship', { status: 'Failed', errorMessage: 'no carrier' }),
+      step(3, 'compensate:charge', {
+        status: 'Failed',
+        errorType: 'TimeoutException',
+        errorMessage: 'gateway unreachable',
+      }),
+    ]);
+
+    const alert = fixture.nativeElement.querySelector('.rollback-summary');
+
+    expect(alert).not.toBeNull();
+    expect(alert.textContent).toContain('charge');
+    expect(alert.textContent).toContain('gateway unreachable');
+  });
+
+  it('does not claim a partial rollback when everything was undone', () => {
+    respond(instance({ status: 'Compensated', failedStepName: 'ship' }), [
+      step(1, 'charge'),
+      step(2, 'ship', { status: 'Failed' }),
+      step(3, 'compensate:charge'),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('.rollback-summary')).toBeNull();
+  });
+
+  it('still states the original failure on a compensated instance', () => {
+    // The rollback is what the engine did about it; the failure is why. An
+    // operator opening a Compensated instance still needs the cause.
+    respond(
+      instance({
+        status: 'Compensated',
+        failedStepName: 'ship',
+        errorType: 'InvalidOperationException',
+        errorMessage: 'no carrier available',
+      }),
+      [step(1, 'ship', { status: 'Failed', errorMessage: 'no carrier available' })],
+    );
+
+    expect(text()).toContain('Failed at step ship');
+    expect(text()).toContain('no carrier available');
+  });
+
+  it('disables cancel on a compensated instance', () => {
+    // Terminal. Offering an action the API refuses tells the operator their
+    // action failed on an instance that finished cleanly.
+    //
+    // Disabled rather than hidden: the button vanishing leaves an operator
+    // wondering whether they misremembered it, while one that is present and
+    // disabled says the action exists and does not apply here. That is a
+    // decision this view already made, not something this story changes.
+    respond(instance({ status: 'Compensated' }), []);
+
+    const cancel: HTMLButtonElement = fixture.nativeElement.querySelector('.cancel-button');
+
+    expect(cancel).not.toBeNull();
+    expect(cancel.disabled).toBe(true);
+  });
+
   it('calls out the failing step and its error', () => {
     respond(
       instance({

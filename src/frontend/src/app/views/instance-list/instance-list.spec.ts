@@ -3,7 +3,7 @@ import { provideHttpClient, withFetch } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { InstanceList } from './instance-list';
-import { InstancePage } from '../../api/models';
+import { INSTANCE_STATUSES, InstancePage } from '../../api/models';
 import { expectNoAccessibilityViolations } from '../../testing/accessibility';
 
 /**
@@ -147,5 +147,85 @@ describe('InstanceList', () => {
     respondWith(page({ status: 'Failed' }, { status: 'Running' }));
 
     await expectNoAccessibilityViolations(fixture);
+  });
+
+  // ----------------------------------------------------------- #122 filter
+
+  it('offers every status the engine can report', () => {
+    // Built from INSTANCE_STATUSES, so a status added to the engine appears
+    // here without anyone remembering to add it. A status missing from this
+    // list is a status an operator cannot find.
+    respondWith(page({}));
+
+    const options: HTMLElement[] = Array.from(
+      fixture.nativeElement.querySelectorAll('.status-filter option'),
+    );
+
+    const values = options.map((option) => option.getAttribute('value'));
+
+    expect(values).toContain('Compensated');
+    expect(values).toContain('CompensationFailed');
+
+    // Plus an "any status" option, which is the default.
+    expect(values.length).toBe(INSTANCE_STATUSES.length + 1);
+  });
+
+  it('requests only the chosen status', () => {
+    respondWith(page({}));
+
+    const select: HTMLSelectElement = fixture.nativeElement.querySelector('.status-filter');
+    select.value = 'Compensated';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    const request = http.expectOne((r) => r.url === '/api/instances');
+
+    expect(request.request.params.get('status')).toBe('Compensated');
+    request.flush(page({ status: 'Compensated' }));
+    fixture.detectChanges();
+  });
+
+  it('sends no status parameter when the filter is cleared', () => {
+    // `?status=` would be an unrecognised status value and a 400, not "no
+    // filter" - a distinction InstanceService already makes and this must not
+    // undo.
+    respondWith(page({}));
+
+    const select: HTMLSelectElement = fixture.nativeElement.querySelector('.status-filter');
+    select.value = 'Failed';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    http.expectOne((r) => r.url === '/api/instances').flush(page({}));
+
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    const request = http.expectOne((r) => r.url === '/api/instances');
+
+    expect(request.request.params.has('status')).toBe(false);
+    request.flush(page({}));
+    fixture.detectChanges();
+  });
+
+  it('keeps the filter visible when it matches nothing', () => {
+    // Filtering to a status with no results must not hide the control that got
+    // you there, or an operator is left on an empty page with no way back.
+    respondWith(page({}));
+
+    const select: HTMLSelectElement = fixture.nativeElement.querySelector('.status-filter');
+    select.value = 'Compensated';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    http.expectOne((r) => r.url === '/api/instances').flush({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 50,
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.status-filter')).not.toBeNull();
   });
 });

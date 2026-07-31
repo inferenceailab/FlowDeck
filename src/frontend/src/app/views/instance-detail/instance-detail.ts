@@ -6,6 +6,15 @@ import { LoadState, describeHttpError, failed, loading, ready } from '../../api/
 import { Instance, StepHistoryEntry, isTerminal } from '../../api/models';
 import { StatusBadge } from '../../components/status-badge/status-badge';
 
+/**
+ * How the engine names a compensating action in history (ADR-0021).
+ *
+ * A prefix rather than a separate field, so the contract is one string both
+ * sides agree on. Declared once here rather than inline, because a typo in a
+ * `startsWith` would silently classify every rollback as an ordinary step.
+ */
+const ROLLBACK_PREFIX = 'compensate:';
+
 /** An instance together with its execution history. */
 interface InstanceDetailData {
   readonly instance: Instance;
@@ -153,4 +162,36 @@ export class InstanceDetail implements OnInit {
   protected isRetry(entry: StepHistoryEntry): boolean {
     return Number(entry.attempt) > 1;
   }
+
+  /**
+   * Whether this entry is a compensating action rather than a forward step.
+   *
+   * The engine names them `compensate:<step>` (ADR-0021). Without telling them
+   * apart, the timeline shows a step the author never declared and the run
+   * reads as having executed something not in the definition.
+   */
+  protected isRollback(entry: StepHistoryEntry): boolean {
+    return entry.stepName.startsWith(ROLLBACK_PREFIX);
+  }
+
+  /**
+   * The step name an operator reads.
+   *
+   * The prefix is a wire detail: a rollback row already says it is one, so
+   * repeating it in the name is noise.
+   */
+  protected displayName(entry: StepHistoryEntry): string {
+    return this.isRollback(entry) ? entry.stepName.slice(ROLLBACK_PREFIX.length) : entry.stepName;
+  }
+
+  /**
+   * The compensating actions that failed, for a partial rollback.
+   *
+   * `CompensationFailed` is the one status that always needs a human, and what
+   * they need is which undo did not happen — the engine cannot say how partly
+   * an instance was rolled back, only history can.
+   */
+  protected readonly failedRollbacks = computed(() =>
+    this.history().filter((entry) => this.isRollback(entry) && entry.status === 'Failed'),
+  );
 }

@@ -137,6 +137,53 @@ h2 {
   competing with the step name and outcome, which are what an operator scans
   the timeline for.
 */
+/*
+  A rollback row. Set apart from the forward steps above it, because the
+  timeline otherwise reads as though the workflow simply carried on executing
+  after it failed.
+*/
+.entry-rollback {
+  color: var(--status-compensated);
+}
+
+.entry-rollback .entry-marker {
+  color: var(--status-compensated);
+}
+
+.entry-rollback-tag {
+  font-size: 0.75rem;
+  color: var(--status-compensated);
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}
+
+/*
+  A partial rollback. Distinct from .failure-summary above it - the two appear
+  together on a CompensationFailed instance, and one border colour for both
+  would read as a single message.
+*/
+.rollback-summary {
+  border: 1px solid var(--status-compensation-failed);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--status-compensation-failed) 8%, transparent);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.rollback-failures {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.rollback-failures li {
+  margin-bottom: 0.25rem;
+}
+
+.rollback-failures .entry-step {
+  margin-right: 0.4rem;
+}
+
 .entry-attempt {
   font-size: 0.75rem;
   color: var(--text-muted);
