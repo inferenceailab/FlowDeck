@@ -22,8 +22,63 @@
           <code class="instance-id">{{ instance()!.id }}</code>
         </div>
 
-        <app-status-badge [status]="instance()!.status" />
+        <div class="detail-actions">
+          <app-status-badge [status]="instance()!.status" />
+
+          <!--
+            Disabled rather than hidden on a terminal instance. A control that
+            vanishes leaves an operator wondering whether they misremembered
+            it; one that is present and disabled says the action exists and
+            does not apply here.
+          -->
+          <button
+            type="button"
+            class="cancel-button"
+            [disabled]="!canCancel() || cancelling()"
+            (click)="confirmCancel()"
+            i18n
+          >
+            Cancel instance
+          </button>
+        </div>
       </header>
+
+      @if (confirming()) {
+        <!--
+          Two steps, not one. Cancelling is irreversible - terminal states are
+          final - and a misclick that stops a long-running workflow is
+          expensive.
+        -->
+        <div class="confirm" role="alertdialog" aria-labelledby="confirm-title">
+          <p id="confirm-title">
+            <strong i18n>Cancel this instance?</strong>
+          </p>
+          <p class="confirm-detail" i18n>
+            This cannot be undone. The instance stops where it is and keeps its
+            history.
+          </p>
+
+          <div class="confirm-actions">
+            <button type="button" (click)="cancel()" [disabled]="cancelling()" i18n>
+              {{ cancelling() ? 'Cancelling…' : 'Yes, cancel it' }}
+            </button>
+            <button type="button" (click)="dismissCancel()" [disabled]="cancelling()" i18n>
+              Keep running
+            </button>
+          </div>
+        </div>
+      }
+
+      @if (cancelError()) {
+        <!--
+          Beside the instance, not instead of it. A failed cancel does not mean
+          the instance could not be loaded.
+        -->
+        <div class="state-error cancel-error" role="alert">
+          <p><strong i18n>Could not cancel this instance.</strong></p>
+          <p class="state-detail">{{ cancelError() }}</p>
+        </div>
+      }
 
       <!--
         A description list, not a table. These are attributes of one thing, and
