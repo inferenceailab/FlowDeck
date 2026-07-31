@@ -1,6 +1,7 @@
 using FlowDeck.Api;
 using FlowDeck.Core;
 using FlowDeck.Core.Persistence;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,9 +23,27 @@ builder.Services.AddSingleton(provider => new WorkflowEngine(
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<FlowDeckExceptionHandler>();
 
+// Readiness depends on the store; liveness deliberately does not. A node whose
+// database is down should leave rotation, not be restarted.
+builder.Services.AddHealthChecks()
+    .AddCheck<WorkflowStoreHealthCheck>("workflow-store", tags: ["ready"]);
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
+
+// Liveness: the process is up and the pipeline responds. No dependencies, so a
+// database outage cannot trigger a restart loop that makes recovery harder.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+});
+
+// Readiness: this node can actually serve requests.
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+});
 
 app.MapWorkflowEndpoints();
 app.MapInstanceEndpoints();
