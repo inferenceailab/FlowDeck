@@ -37,6 +37,16 @@ describe('InstanceList live updates', () => {
 
   const text = (): string => fixture.nativeElement.textContent ?? '';
 
+  /**
+   * The table body only.
+   *
+   * The whole component's text is no longer a safe thing to assert absence
+   * against: #122's status filter lists every status name as an option, so
+   * "Running" appears on the page whether or not any instance is running.
+   */
+  const rowText = (): string =>
+    fixture.nativeElement.querySelector('tbody')?.textContent ?? '';
+
   const listRequest = () => http.expectOne((request) => request.url === '/api/instances');
 
   beforeEach(async () => {
@@ -71,8 +81,32 @@ describe('InstanceList live updates', () => {
     listRequest().flush(pageOf('Completed'));
     fixture.detectChanges();
 
-    expect(text()).toContain('Completed');
-    expect(text()).not.toContain('Running');
+    expect(rowText()).toContain('Completed');
+    expect(rowText()).not.toContain('Running');
+  });
+
+  it('keeps the status filter across a background refresh', () => {
+    // #122. The list polls every five seconds, so a refresh that dropped the
+    // filter would silently repopulate the table with everything moments after
+    // an operator narrowed it.
+    listRequest().flush(pageOf('Running'));
+    fixture.detectChanges();
+
+    const select: HTMLSelectElement = fixture.nativeElement.querySelector('.status-filter');
+    select.value = 'CompensationFailed';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    listRequest().flush(pageOf('CompensationFailed'));
+    fixture.detectChanges();
+
+    vi.advanceTimersByTime(InstanceList.RefreshIntervalMs);
+
+    const refresh = listRequest();
+
+    expect(refresh.request.params.get('status')).toBe('CompensationFailed');
+
+    refresh.flush(pageOf('CompensationFailed'));
+    fixture.detectChanges();
   });
 
   it('does not flash the loading state on every refresh', () => {

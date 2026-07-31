@@ -1,6 +1,34 @@
 <h1 i18n>Instances</h1>
 
 <!--
+  Outside the state switch deliberately. Filtering to a status with no results
+  would otherwise hide the control that got you there, leaving an operator with
+  an empty page and no way back.
+
+  A plain <select> rather than a custom control: it is keyboard operable, screen
+  reader announced and native on mobile without any of that being this
+  component's problem (ADR-0016).
+-->
+<div class="filters">
+  <label class="filter" for="status-filter">
+    <span i18n>Status</span>
+
+    <select
+      id="status-filter"
+      class="status-filter"
+      [value]="statusFilter() ?? ''"
+      (change)="filterByStatus($any($event.target).value)"
+    >
+      <option value="" i18n>Any status</option>
+
+      @for (status of statuses; track status) {
+        <option [value]="status">{{ status }}</option>
+      }
+    </select>
+  </label>
+</div>
+
+<!--
   aria-live="polite" so a state change is announced rather than silently
   repainting. A sighted user sees the spinner replaced by a table; without this
   a screen reader user gets nothing at all.

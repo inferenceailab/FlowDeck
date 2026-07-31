@@ -16,7 +16,7 @@ import { InstanceStatus } from '../../api/models';
   selector: 'app-status-badge',
   template: `<span class="badge" [class]="'badge-' + status().toLowerCase()">
     <span class="badge-glyph" aria-hidden="true">{{ glyph() }}</span>
-    <span class="badge-label">{{ status() }}</span>
+    <span class="badge-label">{{ label() }}</span>
   </span>`,
   styleUrl: './status-badge.css',
 })
@@ -31,19 +31,57 @@ export class StatusBadge {
    * cannot tell the palette apart.
    */
   protected readonly glyph = computed(() => {
-    switch (this.status()) {
+    const status = this.status();
+
+    switch (status) {
       case 'Running':
-        return '▶'; // ▶
+        return '▶';
       case 'Suspended':
-        return '⏸'; // ⏸
+        return '⏸';
       case 'Completed':
-        return '✓'; // ✓
+        return '✓';
       case 'Failed':
-        return '✕'; // ✕
+        return '✕';
       case 'Cancelled':
-        return '⊘'; // ⊘
+        return '⊘';
+      case 'Compensated':
+        return '↩';
+      case 'CompensationFailed':
+        return '⚠';
       default:
-        return '•'; // •
+        return assertExhaustive(status);
     }
   });
+
+  /**
+   * What an operator reads.
+   *
+   * The status name is the wire value, and two of them are not English:
+   * "CompensationFailed" describes an engine state, while an operator is
+   * asking what happened to their workflow. The badge is where they find out,
+   * so it says "Rollback failed".
+   */
+  protected readonly label = computed(() => {
+    const status = this.status();
+
+    switch (status) {
+      case 'Compensated':
+        return $localize`Rolled back`;
+      case 'CompensationFailed':
+        return $localize`Rollback failed`;
+      default:
+        return status;
+    }
+  });
+}
+
+/**
+ * Fails to compile if a status is added and not handled above.
+ *
+ * The switch previously ended in `default: return '•'`, so #120's two new
+ * statuses rendered as an anonymous dot and nothing complained. A silent
+ * fallback turns "we forgot this case" into "this case looks deliberate".
+ */
+function assertExhaustive(status: never): never {
+  throw new Error(`Unhandled instance status: ${String(status)}`);
 }

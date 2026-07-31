@@ -119,7 +119,12 @@
         opening this view after an alert wants the answer first and the evidence
         second.
       -->
-      @if (instance()!.status === 'Failed') {
+      <!--
+        Shown for every status where a step failed, not only Failed. A
+        compensated instance still broke, and the rollback is what the engine
+        did about it rather than the reason it happened.
+      -->
+      @if (instance()!.failedStepName) {
         <div class="failure-summary" role="alert">
           <p>
             <strong i18n>Failed at step {{ instance()!.failedStepName }}</strong>
@@ -127,6 +132,30 @@
           <p class="failure-detail">
             {{ instance()!.errorType }}: {{ instance()!.errorMessage }}
           </p>
+        </div>
+      }
+
+      <!--
+        A partial rollback is the one outcome that always needs a human, and
+        what they need is which undo did not happen. The engine cannot say how
+        partly an instance was rolled back - only history can.
+      -->
+      @if (failedRollbacks().length > 0) {
+        <div class="rollback-summary" role="alert">
+          <p>
+            <strong i18n>Rollback incomplete</strong>
+          </p>
+          <p class="failure-detail" i18n>
+            These steps could not be undone, so their effects are still in place:
+          </p>
+          <ul class="rollback-failures">
+            @for (entry of failedRollbacks(); track entry.sequence) {
+              <li>
+                <span class="entry-step">{{ displayName(entry) }}</span>
+                <span class="failure-detail">{{ entry.errorType }}: {{ entry.errorMessage }}</span>
+              </li>
+            }
+          </ul>
         </div>
       }
 
@@ -142,14 +171,26 @@
         -->
         <ol class="timeline">
           @for (entry of history(); track entry.sequence) {
-            <li class="timeline-entry" [class.entry-failed]="isFailurePoint(entry)">
+            <li
+              class="timeline-entry"
+              [class.entry-failed]="isFailurePoint(entry)"
+              [class.entry-rollback]="isRollback(entry)"
+            >
               <span class="entry-marker" aria-hidden="true">
-                {{ isFailurePoint(entry) ? '✕' : '✓' }}
+                {{ isFailurePoint(entry) ? '✕' : isRollback(entry) ? '↩' : '✓' }}
               </span>
 
               <div class="entry-body">
                 <div class="entry-heading">
-                  <span class="entry-step">{{ entry.stepName }}</span>
+                  <!--
+                    The compensate: prefix is a wire detail. The row already
+                    says it is a rollback, so repeating it here is noise.
+                  -->
+                  <span class="entry-step">{{ displayName(entry) }}</span>
+
+                  @if (isRollback(entry)) {
+                    <span class="entry-rollback-tag" i18n>rolled back</span>
+                  }
 
                   <!--
                     The outcome word, so the marker glyph is never the only

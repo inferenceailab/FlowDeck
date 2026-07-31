@@ -29,6 +29,18 @@
   --status-failed: #f2555a;
   --status-cancelled: #9fb0c0;
 
+  /*
+    Rolled back: the workflow broke and undid its own work. Purple keeps it out
+    of the red pile an operator is trying to shrink, without claiming success.
+  */
+  --status-compensated: #a98bdc;
+
+  /*
+    A partial rollback - the original failure plus unresolved side effects.
+    The worst outcome the engine reports, so it takes the strongest colour.
+  */
+  --status-compensation-failed: #ff8a3d;
+
   --radius: 0.375rem;
 }
 

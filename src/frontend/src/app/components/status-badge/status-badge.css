@@ -39,3 +39,20 @@
 .badge-cancelled {
   color: var(--status-cancelled);
 }
+
+/*
+  Rolled back is not a success and not an open problem: the workflow broke and
+  cleaned up after itself. Given its own colour rather than reusing failed's
+  red, which would put it back in the pile an operator is trying to shrink.
+*/
+.badge-compensated {
+  color: var(--status-compensated);
+}
+
+/*
+  A partial rollback is the worst outcome the engine can report - the original
+  failure plus unresolved side effects - so it takes the strongest colour.
+*/
+.badge-compensationfailed {
+  color: var(--status-compensation-failed);
+}

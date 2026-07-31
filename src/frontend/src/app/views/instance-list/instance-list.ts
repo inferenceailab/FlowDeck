@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { InstanceService } from '../../api/instance.service';
 import { LoadState, describeHttpError, failed, loading, ready } from '../../api/load-state';
-import { Instance, InstancePage } from '../../api/models';
+import { INSTANCE_STATUSES, Instance, InstancePage, InstanceStatus } from '../../api/models';
 import { StatusBadge } from '../../components/status-badge/status-badge';
 
 /**
@@ -60,6 +60,24 @@ export class InstanceList implements OnInit, OnDestroy {
     return state.kind === 'error' ? state.message : '';
   });
 
+  /**
+   * Every status an operator can filter to.
+   *
+   * Taken from the shared list rather than written out here, so a status added
+   * to the engine appears in the dropdown without anyone remembering to add it.
+   * A status missing from this list is a status an operator cannot find.
+   */
+  protected readonly statuses = INSTANCE_STATUSES;
+
+  /**
+   * The chosen status, or null for any.
+   *
+   * Null rather than an empty string, because `?status=` is an unrecognised
+   * status value and a 400 - not "no filter". `InstanceService` already draws
+   * that distinction and this must not undo it.
+   */
+  protected readonly statusFilter = signal<InstanceStatus | null>(null);
+
   ngOnInit(): void {
     this.load();
 
@@ -75,11 +93,30 @@ export class InstanceList implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Applies a status filter chosen from the dropdown.
+   *
+   * Reloads rather than filtering what is already on screen: the list is paged
+   * server-side, so filtering the current page would search only the newest
+   * fifty instances and report "no results" for a status sitting on page two.
+   */
+  protected filterByStatus(value: string): void {
+    this.statusFilter.set(value === '' ? null : (value as InstanceStatus));
+    this.load();
+  }
+
+  /** The current filter as query parameters. */
+  private query(): { status?: InstanceStatus } {
+    const status = this.statusFilter();
+
+    return status === null ? {} : { status };
+  }
+
   /** Fetches the first page, replacing whatever is shown. */
   protected load(): void {
     this.state.set(loading());
 
-    this.instances.list().subscribe({
+    this.instances.list(this.query()).subscribe({
       next: (page) => this.state.set(ready(page)),
 
       // The error is turned into a message here rather than stored raw, so the
@@ -108,7 +145,9 @@ export class InstanceList implements OnInit, OnDestroy {
 
     this.refreshing.set(true);
 
-    this.instances.list().subscribe({
+    // Carries the filter. A refresh that dropped it would silently repopulate
+    // the table with everything, moments after an operator narrowed it.
+    this.instances.list(this.query()).subscribe({
       next: (page) => {
         this.refreshing.set(false);
         this.state.set(ready(page));
