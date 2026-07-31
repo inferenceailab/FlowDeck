@@ -13,6 +13,14 @@ namespace FlowDeck.Core.Tests.Persistence;
 ///
 /// Kept provider-agnostic: no test may assume in-memory semantics, and any
 /// setup a provider needs goes in <see cref="CreateStoreAsync"/>.
+///
+/// <para>
+/// Tests are <c>[SkippableFact]</c> so a provider needing a database nobody has
+/// configured reports as <b>skipped</b> rather than passed. A green tick that
+/// means "not run" is worse than a red one - it is the same failure mode as the
+/// CI job that silently skipped the whole backend build because it globbed
+/// <c>*.sln</c> and the solution was a <c>.slnx</c>.
+/// </para>
 /// </remarks>
 public abstract class WorkflowStoreConformanceTests
 {
@@ -48,7 +56,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // ------------------------------------------------------------- create
 
-    [Fact]
+    [SkippableFact]
     public async Task A_created_instance_can_be_found()
     {
         var store = await this.CreateStoreAsync();
@@ -64,7 +72,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(InstanceStatus.Running, found.Status);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task An_unknown_instance_is_reported_as_null_not_an_error()
     {
         var store = await this.CreateStoreAsync();
@@ -72,7 +80,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Null(await store.FindAsync(Guid.NewGuid()));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Creating_the_same_id_twice_is_rejected()
     {
         var store = await this.CreateStoreAsync();
@@ -87,7 +95,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // --------------------------------------------------------------- save
 
-    [Fact]
+    [SkippableFact]
     public async Task Saving_updates_state_and_increments_the_revision()
     {
         var store = await this.CreateStoreAsync();
@@ -106,7 +114,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(saved.Revision, reloaded.Revision);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Saving_from_a_stale_revision_is_rejected()
     {
         // Two writers load the same state; the second must lose.
@@ -125,7 +133,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(record.Id, ex.InstanceId);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_rejected_save_leaves_the_stored_state_untouched()
     {
         var store = await this.CreateStoreAsync();
@@ -144,7 +152,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal("B", reloaded!.CurrentStepName);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Saving_an_unknown_instance_is_rejected()
     {
         var store = await this.CreateStoreAsync();
@@ -155,7 +163,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // ------------------------------------------------------------ history
 
-    [Fact]
+    [SkippableFact]
     public async Task History_is_appended_and_returned_in_order()
     {
         var store = await this.CreateStoreAsync();
@@ -172,7 +180,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal([1, 2, 3], history.Select(entry => entry.Sequence));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task History_for_an_unknown_instance_is_empty()
     {
         var store = await this.CreateStoreAsync();
@@ -180,7 +188,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Empty(await store.GetHistoryAsync(Guid.NewGuid()));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_rejected_save_appends_no_history()
     {
         // The atomicity clause of the contract. If a concurrency failure could
@@ -203,7 +211,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(["A"], history.Select(entry => entry.StepName));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Existing_history_is_never_rewritten()
     {
         var store = await this.CreateStoreAsync();
@@ -224,7 +232,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // --------------------------------------------------------------- data
 
-    [Fact]
+    [SkippableFact]
     public async Task Workflow_data_round_trips()
     {
         var store = await this.CreateStoreAsync();
@@ -245,7 +253,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal("acme", found.Data["customer"]);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_null_data_value_round_trips_as_present()
     {
         // Matches WorkflowData's contract (ADR-0005): an explicit null is
@@ -263,7 +271,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Null(found.Data["note"]);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Failure_details_round_trip()
     {
         var store = await this.CreateStoreAsync();
@@ -286,7 +294,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // --------------------------------------------------------------- list
 
-    [Fact]
+    [SkippableFact]
     public async Task Listing_returns_newest_first()
     {
         var store = await this.CreateStoreAsync();
@@ -301,7 +309,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal([newer.Id, older.Id], listed.Select(record => record.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Listing_filters_by_status()
     {
         var store = await this.CreateStoreAsync();
@@ -315,7 +323,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.All(failed, record => Assert.Equal(InstanceStatus.Failed, record.Status));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Listing_filters_by_definition_id()
     {
         var store = await this.CreateStoreAsync();
@@ -328,7 +336,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal("order", orders[0].DefinitionId);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Listing_pages_with_skip_and_take()
     {
         var store = await this.CreateStoreAsync();
@@ -347,7 +355,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(T0.AddMinutes(2), page[1].CreatedAt);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Counting_ignores_paging_but_honours_filters()
     {
         // #25 must report a total alongside a page. A count that respected Take
@@ -367,7 +375,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(5, count);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Listing_an_empty_store_returns_empty_not_null()
     {
         var store = await this.CreateStoreAsync();
@@ -378,7 +386,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // -------------------------------------------------------------- purge
 
-    [Fact]
+    [SkippableFact]
     public async Task Purging_removes_terminal_instances_older_than_the_cutoff()
     {
         var store = await this.CreateStoreAsync();
@@ -395,7 +403,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.NotNull(await store.FindAsync(recent.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Purging_never_removes_an_in_flight_instance()
     {
         // Age is not evidence that work is finished. Deleting a suspended
@@ -414,7 +422,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.NotNull(await store.FindAsync(ancientSuspended.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Purging_removes_failed_and_cancelled_instances_too()
     {
         var store = await this.CreateStoreAsync();
@@ -428,7 +436,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Empty(await store.ListAsync(new InstanceFilter()));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Purging_removes_the_history_of_purged_instances()
     {
         // History outliving its instance would leak storage forever and orphan
@@ -447,7 +455,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Empty(await store.GetHistoryAsync(record.Id));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Purging_is_idempotent()
     {
         var store = await this.CreateStoreAsync();
@@ -457,7 +465,7 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(0, await store.PurgeAsync(T0.AddDays(1)));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task A_terminal_instance_without_a_completion_time_is_not_purged()
     {
         // Defensive: a null CompletedAt on a terminal instance is a data defect,
@@ -473,7 +481,7 @@ public abstract class WorkflowStoreConformanceTests
 
     // -------------------------------------------------------- isolation
 
-    [Fact]
+    [SkippableFact]
     public async Task Records_returned_by_the_store_are_not_live_references()
     {
         // A provider that hands back its own stored object would let a caller

@@ -27,6 +27,42 @@ eleven tests because SQLite refuses to `ORDER BY` a `DateTimeOffset`, and
 mutation-testing the in-memory provider showed that removing its concurrency
 check fails three tests and removing copy-on-read fails one.
 
+## You probably do not need a new provider
+
+If your database has an EF Core provider, `EfCoreWorkflowStore` already works —
+it depends only on `EntityFrameworkCore.Relational`, so nothing in it is tied to
+a particular database:
+
+```csharp
+var options = new DbContextOptionsBuilder<WorkflowDbContext>()
+    .UseSqlServer(connectionString)     // or UseNpgsql, UseSqlite, …
+    .Options;
+
+var store = new EfCoreWorkflowStore(() => new WorkflowDbContext(options));
+```
+
+**Verify it rather than assuming it.** Add a subclass and run the suite:
+
+```csharp
+public sealed class MySqlConformanceTests : RelationalConformanceTests
+{
+    protected override string ConnectionStringVariable => "FLOWDECK_MYSQL";
+
+    protected override string DatabaseName => "MySQL";
+
+    protected override void Configure(
+        DbContextOptionsBuilder<WorkflowDbContext> builder, string connectionString) =>
+        builder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+}
+```
+
+Tests skip when the environment variable is absent, so `dotnet test` stays fast
+by default and reports **skipped** — never a green tick for something that did
+not run.
+
+Write a genuinely new provider only for a store EF Core cannot reach: a document
+database, a key-value store, an event log.
+
 ## What the store must guarantee
 
 ### 1. Checkpoint state is authoritative
