@@ -31,6 +31,11 @@ public interface IStepContext
 
     /// <summary>Name of the step currently executing.</summary>
     string StepName { get; }
+
+    /// <summary>
+    /// State shared by the steps of this instance, and only this instance.
+    /// </summary>
+    IWorkflowData Data { get; }
 }
 
 /// <summary>
@@ -56,4 +61,13 @@ public interface IStepBody
 /// <summary>
 /// Minimal <see cref="IStepContext"/> implementation.
 /// </summary>
-public sealed record StepContext(Guid InstanceId, string StepName) : IStepContext;
+public sealed record StepContext(Guid InstanceId, string StepName, IWorkflowData Data) : IStepContext
+{
+    /// <summary>
+    /// Convenience for tests and callers that do not exercise workflow data.
+    /// </summary>
+    public StepContext(Guid instanceId, string stepName)
+        : this(instanceId, stepName, new WorkflowData())
+    {
+    }
+}
