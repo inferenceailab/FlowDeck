@@ -1,0 +1,179 @@
+name: CD
+
+# Deploys to the homelab. Never triggered by a pull request - only by a merge
+# to main that already passed CI, or by an explicit manual dispatch.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (defaults to the commit SHA)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-homelab
+  cancel-in-progress: false # never interrupt a deployment mid-flight
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ----------------------------------------------------------------- build
+  build:
+    name: Build and publish images
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write # required to push to GHCR
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      prefix: ${{ steps.meta.outputs.prefix }}
+      built: ${{ steps.detect.outputs.found }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect Dockerfiles
+        id: detect
+        shell: bash
+        run: |
+          if [ -f src/backend/Dockerfile ] && [ -f src/frontend/Dockerfile ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dockerfiles not present yet - build skipped until Phase 3 lands."
+          fi
+
+      # GHCR rejects uppercase image names and this repository is "FlowDeck",
+      # so the prefix must be lowercased. Actions expressions have no lower()
+      # function, hence doing it in shell.
+      - name: Compute image tag and prefix
+        id: meta
+        shell: bash
+        run: |
+          echo "tag=${{ inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "prefix=${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      # Plain docker CLI rather than a marketplace action: this repository
+      # restricts Actions to GitHub-owned and verified creators, and the CLI
+      # keeps the supply-chain surface to zero third-party actions.
+      - name: Log in to GHCR
+        if: steps.detect.outputs.found == 'true'
+        shell: bash
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build API image
+        if: steps.detect.outputs.found == 'true'
+        shell: bash
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          docker build -t "$PREFIX/api:$TAG" -t "$PREFIX/api:latest" \
+            -f src/backend/Dockerfile src/backend
+
+      - name: Build web image
+        if: steps.detect.outputs.found == 'true'
+        shell: bash
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          docker build -t "$PREFIX/web:$TAG" -t "$PREFIX/web:latest" \
+            -f src/frontend/Dockerfile src/frontend
+
+      - name: Push images
+        if: steps.detect.outputs.found == 'true'
+        shell: bash
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+        run: |
+          docker push --all-tags "$PREFIX/api"
+          docker push --all-tags "$PREFIX/web"
+
+      - name: Log out of GHCR
+        if: always() && steps.detect.outputs.found == 'true'
+        shell: bash
+        run: docker logout "$REGISTRY" || true
+
+  # ---------------------------------------------------------------- deploy
+  deploy:
+    name: Deploy to homelab
+    runs-on: self-hosted
+    needs: build
+    if: needs.build.outputs.built == 'true'
+    # Requires a GitHub Environment named "homelab". Add required reviewers
+    # there to turn every deployment into an explicit approval.
+    environment:
+      name: homelab
+      url: ${{ vars.HOMELAB_URL }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Captured before anything changes so that rollback has a real tag to
+      # return to. Empty on a first-ever deployment, which is handled below.
+      - name: Capture currently deployed tag
+        id: current
+        shell: bash
+        run: |
+          tag="$(docker inspect --format '{{ .Config.Image }}' flowdeck-api-1 2>/dev/null | sed 's/.*://')" || tag=''
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then
+            echo "Currently deployed: ${tag}"
+          else
+            echo "::notice::No running api container - this is a first deployment, rollback will be unavailable."
+          fi
+
+      # ASSUMPTION: the self-hosted runner lives inside the homelab, so the
+      # deployment is local. No SSH key is stored in GitHub secrets, which is
+      # the main reason to prefer this topology.
+      - name: Deploy with docker compose
+        shell: bash
+        working-directory: deploy/homelab
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+          IMAGE_PREFIX: ${{ needs.build.outputs.prefix }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker compose pull
+          docker compose up -d --remove-orphans
+          docker logout "$REGISTRY" || true
+
+      - name: Wait for API readiness
+        shell: bash
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS "${{ vars.HOMELAB_API_URL }}/health/ready" >/dev/null 2>&1; then
+              echo "API reported ready after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::API did not become ready within 150s."
+          exit 1
+
+      - name: Roll back on failed readiness
+        if: failure()
+        shell: bash
+        working-directory: deploy/homelab
+        env:
+          PREVIOUS_TAG: ${{ steps.current.outputs.tag }}
+          IMAGE_PREFIX: ${{ needs.build.outputs.prefix }}
+        run: |
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "::error::Deployment failed and there is no previous tag to roll back to. Stack left as-is for inspection."
+            exit 1
+          fi
+          echo "::warning::Readiness failed - rolling back to ${PREVIOUS_TAG}."
+          IMAGE_TAG="$PREVIOUS_TAG" docker compose up -d --remove-orphans
+          echo "::error::Deployment rolled back to ${PREVIOUS_TAG}."
+          exit 1
