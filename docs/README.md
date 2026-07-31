@@ -4,6 +4,7 @@
 | --- | --- |
 | [Requirements](requirements.md) | What FlowDeck is meant to do, and explicitly not do |
 | [Architecture](architecture.md) | How it is built, and where it is knowingly incomplete |
+| [Frontend architecture](frontend-architecture.md) | Dashboard shape, and the decisions made before building it |
 | [Implementation plan](implementation-plan.md) | Milestone roadmap and current status |
 | [Decision records](adr/README.md) | Why things are the way they are |
 | [Prior art](prior-art.md) | What is borrowed from WorkflowCore, Hangfire and Elsa - and what differs |

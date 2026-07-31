@@ -40,6 +40,7 @@ Full walkthrough: [Defining a workflow](docs/guides/defining-a-workflow.md).
 | --- | --- |
 | [Requirements](docs/requirements.md) | Scope, functional and non-functional requirements |
 | [Architecture](docs/architecture.md) | Components, execution model, limitations |
+| [Frontend architecture](docs/frontend-architecture.md) | Dashboard shape and decisions |
 | [Implementation plan](docs/implementation-plan.md) | Roadmap and status |
 | [Decision records](docs/adr/README.md) | Why things are the way they are |
 | [Prior art](docs/prior-art.md) | What is borrowed from other engines, and what differs |
