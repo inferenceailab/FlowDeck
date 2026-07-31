@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/FlowDeck.Core/FlowDeck.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/backend/">
+    <Project Path="tests/backend/FlowDeck.Core.Tests/FlowDeck.Core.Tests.csproj" />
+  </Folder>
+</Solution>
