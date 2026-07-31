@@ -114,6 +114,19 @@ It honours `Status` and `DefinitionId`, and ignores `Skip` and `Take`. A count
 that respected paging would always equal the page size and tell a caller
 nothing.
 
+### 7. Every field of the record round-trips
+
+Including the ones that look like bookkeeping. A provider mapping row to record
+by hand is where a field goes missing **without anything failing to compile** —
+the code builds, the suite is green, and the value is quietly zero on every read.
+
+The EF Core provider did exactly this with `StepAttempts` between #103 and #106:
+the count was durable in the in-memory store and silently discarded by the
+database one, which would have turned a bounded retry into an unbounded one
+across a restart. `The_attempt_count_round_trips` is in the suite because of it.
+
+If a field is not worth persisting, it does not belong on the record.
+
 ## Serialisation
 
 If your store holds text rather than objects, use `WorkflowDataSerializer`. It
@@ -135,6 +148,18 @@ either expose a migrator or document how a host creates it.
 Whatever you do, it must never drop or recreate anything. A "fix" that recreates
 the schema destroys in-flight instances.
 
+**Adding a field to the record is a schema change hosts must apply.** Because
+FlowDeck ships no migrations, a host running the EF Core provider against a
+database created before #106 needs a column added:
+
+```sql
+ALTER TABLE flowdeck_instances ADD StepAttempts INTEGER NOT NULL DEFAULT 0;
+```
+
+Zero is the right default: an instance mid-retry when the upgrade lands gets a
+fresh allowance rather than a wrong one, and every other instance already has a
+count of zero.
+
 ## Checklist
 
 - [ ] Subclass `WorkflowStoreConformanceTests`; all tests pass
@@ -143,6 +168,7 @@ the schema destroys in-flight instances.
 - [ ] Reads return copies
 - [ ] `PurgeAsync` spares in-flight instances and removes history with instances
 - [ ] `CountAsync` ignores `Skip`/`Take`
+- [ ] Every field of `WorkflowInstanceRecord` round-trips, bookkeeping included
 - [ ] If text-backed, run the suite with `WorkflowDataSerializer`
 - [ ] Schema creation never destroys existing data
 
