@@ -120,11 +120,14 @@ jobs:
         working-directory: src/frontend
         run: npm run lint
 
-      # ChromeHeadless must be available on the self-hosted runner.
+      # Angular 22 runs tests on Vitest in jsdom, not Karma in a browser, so
+      # there is nothing to launch and no --browsers flag. This was written
+      # against Karma in Phase 2, before the frontend existed; corrected when
+      # it did.
       - name: Test
         if: steps.detect.outputs.found == 'true'
         working-directory: src/frontend
-        run: npm run test -- --watch=false --browsers=ChromeHeadless
+        run: npm run test -- --watch=false
 
       - name: Build
         if: steps.detect.outputs.found == 'true'
