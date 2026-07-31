@@ -31,6 +31,26 @@ public enum InstanceStatus
 
     /// <summary>Stopped deliberately by an operator.</summary>
     Cancelled = 4,
+
+    /// <summary>
+    /// A step failed and every compensating action succeeded.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Failed"/> because an operator triaging a list
+    /// needs to tell "broke, needs a human" from "broke, cleaned itself up".
+    /// Folding them together makes a failure list least useful exactly when it
+    /// is being scanned under pressure (ADR-0021).
+    /// </remarks>
+    Compensated = 5,
+
+    /// <summary>
+    /// A step failed and at least one compensating action also failed.
+    /// </summary>
+    /// <remarks>
+    /// The instance is partly rolled back and the engine cannot say how partly
+    /// - only history can. This is the status that always needs a human.
+    /// </remarks>
+    CompensationFailed = 6,
 }
 
 /// <summary>

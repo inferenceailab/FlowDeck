@@ -26,18 +26,46 @@ export type StepStatus = Schemas['StepStatus'];
 /**
  * Every instance status, in lifecycle order.
  *
- * Derived from the generated union, so a status added to the engine fails to
- * compile here rather than silently disappearing from the status filter.
+ * This previously claimed that a status added to the engine would fail to
+ * compile here. It would not have: `readonly InstanceStatus[]` accepts any
+ * subset of the union quite happily, so #120's two new statuses were added to
+ * the engine and this list stayed green while silently dropping them from the
+ * status filter. The check below is the guarantee the comment was promising.
  */
-export const INSTANCE_STATUSES: readonly InstanceStatus[] = [
+export const INSTANCE_STATUSES = [
   'Running',
   'Suspended',
   'Completed',
   'Failed',
   'Cancelled',
-] as const;
+  'Compensated',
+  'CompensationFailed',
+] as const satisfies readonly InstanceStatus[];
 
-/** Whether an instance has reached a state it will not leave on its own. */
+/**
+ * Fails to compile if the engine gains a status not listed above.
+ *
+ * `Exclude` is empty only when every member of the union appears in the array,
+ * and a non-empty result violates the `extends never` constraint.
+ */
+type AssertNoStatusMissing<T extends never> = T;
+export type AllStatusesListed = AssertNoStatusMissing<
+  Exclude<InstanceStatus, (typeof INSTANCE_STATUSES)[number]>
+>;
+
+/**
+ * Whether an instance has reached a state it will not leave on its own.
+ *
+ * Compensated and CompensationFailed are terminal: rollback happens *before*
+ * the instance settles, so by the time either is reported there is nothing left
+ * to do. Treating them as in-flight would offer a Cancel the API refuses.
+ */
 export function isTerminal(status: InstanceStatus): boolean {
-  return status === 'Completed' || status === 'Failed' || status === 'Cancelled';
+  return (
+    status === 'Completed' ||
+    status === 'Failed' ||
+    status === 'Cancelled' ||
+    status === 'Compensated' ||
+    status === 'CompensationFailed'
+  );
 }

@@ -319,14 +319,28 @@ public sealed class WorkflowEngine
                     continue;
                 }
 
-                instance.Status = InstanceStatus.Failed;
+                // Recorded before rolling back, so the cause survives whatever
+                // the rollback does. A compensating action's error overwriting
+                // it would leave an operator debugging the cleanup instead of
+                // the problem.
                 instance.Error = result.Error;
                 instance.ErrorType = result.Error?.GetType().Name;
                 instance.ErrorMessage = result.Error?.Message;
                 instance.FailedStepName = result.StepName;
+
+                // The instance stays Running through the rollback. ADR-0008
+                // makes terminal states final, so compensation has to happen
+                // before one is reached, never after.
+                await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
+
+                instance.Status = await this
+                    .CompensateAsync(instance, steps, data, input, cancellationToken)
+                    .ConfigureAwait(false);
+
+                instance.CurrentStepName = step.Name;
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
 
-                await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
+                await this.CheckpointAsync(instance, data, input, [], cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -358,6 +372,121 @@ public sealed class WorkflowEngine
 
         await this.CheckpointAsync(instance, data, input, [], cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Undoes the steps that already ran, most recent first.
+    /// </summary>
+    /// <returns>
+    /// The terminal status the instance should take: <see cref="InstanceStatus.Failed"/>
+    /// if nothing was rolled back, <see cref="InstanceStatus.Compensated"/> if
+    /// every action succeeded, <see cref="InstanceStatus.CompensationFailed"/>
+    /// otherwise.
+    /// </returns>
+    /// <remarks>
+    /// Per ADR-0021. Two decisions are visible here and both are deliberate:
+    ///
+    /// <list type="bullet">
+    /// <item>The step that just failed <b>is</b> compensated, exactly once. It
+    /// may never have reported success and still have had an effect - the
+    /// charge that reached the gateway and then timed out.</item>
+    /// <item>A failing compensating action does <b>not</b> stop the rollback.
+    /// Stopping would leave more un-undone work than continuing.</item>
+    /// </list>
+    ///
+    /// <para>
+    /// This makes the reverse pass asymmetric with the forward one, which stops
+    /// at the first failure. That is a genuine inconsistency, chosen rather
+    /// than overlooked.
+    /// </para>
+    /// </remarks>
+    private async Task<InstanceStatus> CompensateAsync(
+        WorkflowInstance instance,
+        IReadOnlyList<StepDeclaration> steps,
+        IWorkflowData data,
+        object? input,
+        CancellationToken cancellationToken)
+    {
+        var compensated = 0;
+        var failures = 0;
+
+        // From the failing step down to the first. The failing step is included
+        // because it may have had an effect; steps beyond it never executed, so
+        // undoing them would act on the world based on work that never
+        // happened.
+        for (var index = instance.CurrentStepIndex; index >= 0; index--)
+        {
+            var step = steps[index];
+
+            if (step.Compensation is null)
+            {
+                // Skipped, not a failure. Most steps have nothing to undo, and
+                // counting those would make every partial rollback look broken.
+                continue;
+            }
+
+            var startedAt = this.timeProvider.GetUtcNow();
+
+            var context = new StepContext(instance.Id, step.Name, data, input);
+            var result = await StepExecutor
+                .ExecuteAsync(step.Compensation(), context, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result.Status == StepStatus.Failed)
+            {
+                failures++;
+            }
+            else
+            {
+                compensated++;
+            }
+
+            // Recorded like any other execution, so "one of two undone" is a
+            // fact an operator can read rather than infer.
+            await this.CheckpointAsync(
+                instance,
+                data,
+                input,
+                [
+                    new StepHistoryEntry
+                    {
+                        InstanceId = instance.Id,
+                        Sequence = 0, // assigned by the store
+                        StepName = CompensationStepName(step.Name),
+                        StartedAt = startedAt,
+                        CompletedAt = this.timeProvider.GetUtcNow(),
+                        Status = result.Status,
+
+                        // Compensation runs once per step regardless of how
+                        // many times the step was attempted, so this is always
+                        // 1 rather than inheriting the forward attempt count.
+                        Attempt = 1,
+                        ErrorType = result.Error?.GetType().Name,
+                        ErrorMessage = result.Error?.Message,
+                    },
+                ],
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (failures > 0)
+        {
+            return InstanceStatus.CompensationFailed;
+        }
+
+        // Compensated has to mean something was undone. A workflow with no undo
+        // actions reporting it would tell an operator the instance cleaned
+        // itself up when nothing happened at all.
+        return compensated > 0 ? InstanceStatus.Compensated : InstanceStatus.Failed;
+    }
+
+    /// <summary>
+    /// The history name for a step's compensating action.
+    /// </summary>
+    /// <remarks>
+    /// Prefixed rather than reusing the step's own name, so a timeline can tell
+    /// the forward execution from the rollback without a second field. The
+    /// prefix is part of the contract a dashboard reads.
+    /// </remarks>
+    internal static string CompensationStepName(string stepName) => $"compensate:{stepName}";
 
     private async Task CheckpointAsync(
         WorkflowInstance instance,
