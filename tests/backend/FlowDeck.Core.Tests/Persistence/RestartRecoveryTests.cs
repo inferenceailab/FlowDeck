@@ -125,7 +125,7 @@ public class RestartRecoveryTests
 
         // A appears exactly once across both hosts.
         Assert.Equal(["A", "B"], log);
-        Assert.Single(log.Where(entry => entry == "A"));
+        Assert.Single(log, entry => entry == "A");
     }
 
     [Fact]
