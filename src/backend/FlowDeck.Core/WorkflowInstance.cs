@@ -52,6 +52,16 @@ public sealed class WorkflowInstance
     public int CurrentStepIndex { get; internal set; }
 
     /// <summary>
+    /// How many times the current step has executed.
+    /// </summary>
+    /// <remarks>
+    /// Belongs to the instance's position, not the instance as a whole: "this
+    /// instance failed 5 times" is not actionable, "step charge failed 3 times"
+    /// is. Reset when execution advances past the step (ADR-0020).
+    /// </remarks>
+    public int StepAttempts { get; internal set; }
+
+    /// <summary>
     /// Name of the step the instance is positioned at, or <see langword="null"/>
     /// once every step has been executed.
     /// </summary>
@@ -119,6 +129,7 @@ public sealed class WorkflowInstance
         DefinitionVersion = this.DefinitionVersion,
         Status = this.Status,
         CurrentStepIndex = this.CurrentStepIndex,
+        StepAttempts = this.StepAttempts,
         CurrentStepName = this.CurrentStepName,
         CreatedAt = this.CreatedAt,
         CompletedAt = this.CompletedAt,
@@ -136,6 +147,7 @@ public sealed class WorkflowInstance
         {
             Status = record.Status,
             CurrentStepIndex = record.CurrentStepIndex,
+            StepAttempts = record.StepAttempts,
             CurrentStepName = record.CurrentStepName,
             CompletedAt = record.CompletedAt,
             FailedStepName = record.FailedStepName,

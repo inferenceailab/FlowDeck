@@ -12,7 +12,14 @@ namespace FlowDeck.Core;
 /// author-written classes that may hold per-execution state, and two instances
 /// of the same workflow must never share it.
 /// </param>
-public sealed record StepDeclaration(string Name, Func<IStep> Factory);
+public sealed record StepDeclaration(string Name, Func<IStep> Factory)
+{
+    /// <summary>
+    /// How this step retries. Defaults to no retry — retry is opt-in
+    /// (ADR-0020).
+    /// </summary>
+    public RetryPolicy RetryPolicy { get; init; } = RetryPolicy.None;
+}
 
 /// <summary>
 /// Collects the steps a definition declares.
@@ -22,7 +29,18 @@ public interface IWorkflowBuilder
     /// <summary>
     /// Appends a step. Declaration order is execution order.
     /// </summary>
-    IWorkflowBuilder AddStep(string name, Func<IStep> Factory);
+    /// <param name="retryPolicy">
+    /// How this step retries, or <see langword="null"/> to use the workflow
+    /// default. With neither, the step does not retry: retry is opt-in, because
+    /// silently retrying a step an author believed ran once converts a visible
+    /// failure into duplicated side effects (ADR-0020).
+    /// </param>
+    IWorkflowBuilder AddStep(string name, Func<IStep> factory, RetryPolicy? retryPolicy = null);
+
+    /// <summary>
+    /// Sets the retry policy for steps that do not declare their own.
+    /// </summary>
+    IWorkflowBuilder WithRetryPolicy(RetryPolicy policy);
 }
 
 /// <summary>
@@ -45,10 +63,23 @@ internal sealed class WorkflowBuilder(string definitionId) : IWorkflowBuilder
     private readonly List<StepDeclaration> steps = [];
     private readonly HashSet<string> names = new(StringComparer.Ordinal);
 
-    public IWorkflowBuilder AddStep(string name, Func<IStep> Factory)
+    /// <summary>
+    /// The workflow-level default, applied to steps that declare nothing.
+    /// </summary>
+    private RetryPolicy defaultRetryPolicy = RetryPolicy.None;
+
+    public IWorkflowBuilder WithRetryPolicy(RetryPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        this.defaultRetryPolicy = policy;
+        return this;
+    }
+
+    public IWorkflowBuilder AddStep(string name, Func<IStep> factory, RetryPolicy? retryPolicy = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(Factory);
+        ArgumentNullException.ThrowIfNull(factory);
 
         // Duplicate names would make execution history ambiguous: two entries
         // called "validate" with no way to tell which ran when.
@@ -58,7 +89,15 @@ internal sealed class WorkflowBuilder(string definitionId) : IWorkflowBuilder
                 definitionId, $"step name '{name}' is declared more than once");
         }
 
-        this.steps.Add(new StepDeclaration(name, Factory));
+        // Resolved at declaration time, not execution time, so a step's policy
+        // is whatever the default was when it was declared. Declaring the
+        // default after some steps would otherwise apply it retroactively to
+        // them, which reads as a bug at the call site.
+        this.steps.Add(new StepDeclaration(name, factory)
+        {
+            RetryPolicy = retryPolicy ?? this.defaultRetryPolicy,
+        });
+
         return this;
     }
 
