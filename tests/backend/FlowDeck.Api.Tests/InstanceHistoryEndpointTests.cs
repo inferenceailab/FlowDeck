@@ -100,6 +100,49 @@ public class InstanceHistoryEndpointTests
     }
 
     [Fact]
+    public async Task The_attempt_number_reaches_the_wire()
+    {
+        // #107. The dashboard timeline is where "failed three times" is read,
+        // so a number the engine records but the API drops is worth nothing.
+        using var factory = new FlowDeckApiFactory().With(new RetryingWorkflow());
+        using var client = factory.CreateClient();
+        var id = await StartAsync(client, "retrying");
+
+        using var response = await client.GetAsync($"/api/instances/{id}/history");
+        var history = await response.Content.ReadFromJsonAsync<StepHistoryResponse[]>();
+
+        Assert.NotNull(history);
+        Assert.Equal([1, 2, 3], history.Select(entry => entry.Attempt));
+        Assert.All(history, entry => Assert.Equal("charge", entry.StepName));
+    }
+
+    [Fact]
+    public async Task An_unretried_step_reports_attempt_one_on_the_wire()
+    {
+        // A client rendering "attempt N of M" must not have to special-case
+        // zero for the overwhelmingly common no-retry path.
+        using var factory = new FlowDeckApiFactory().With(new ThreeStepWorkflow(() => new NoopStep()));
+        using var client = factory.CreateClient();
+        var id = await StartAsync(client, "three-step");
+
+        using var response = await client.GetAsync($"/api/instances/{id}/history");
+        var history = await response.Content.ReadFromJsonAsync<StepHistoryResponse[]>();
+
+        Assert.All(history!, entry => Assert.Equal(1, entry.Attempt));
+    }
+
+    /// <summary>A workflow whose single step always fails, with three attempts.</summary>
+    private sealed class RetryingWorkflow : IWorkflowDefinition
+    {
+        public string Id => "retrying";
+
+        public int Version => 1;
+
+        public void Build(IWorkflowBuilder builder) =>
+            builder.AddStep("charge", () => new ThrowingStep(), RetryPolicy.FixedDelay(3, TimeSpan.Zero));
+    }
+
+    [Fact]
     public async Task An_unknown_instance_returns_an_empty_array_not_404()
     {
         // History removed by retention (#20) is not a client error. A 404 would

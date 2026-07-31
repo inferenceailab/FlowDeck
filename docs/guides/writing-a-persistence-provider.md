@@ -154,11 +154,13 @@ database created before #106 needs a column added:
 
 ```sql
 ALTER TABLE flowdeck_instances ADD StepAttempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE flowdeck_history   ADD Attempt      INTEGER NOT NULL DEFAULT 1;
 ```
 
-Zero is the right default: an instance mid-retry when the upgrade lands gets a
-fresh allowance rather than a wrong one, and every other instance already has a
-count of zero.
+The defaults differ deliberately. Zero attempts on an instance means an instance
+mid-retry when the upgrade lands gets a fresh allowance rather than a wrong one.
+One on a history row means every execution recorded before #107 reads as a first
+attempt — which is what it was, since retries did not exist.
 
 ## Checklist
 

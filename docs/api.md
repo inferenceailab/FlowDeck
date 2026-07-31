@@ -107,16 +107,28 @@ GET /api/instances/3f2a…/history
 ```json
 [
   { "sequence": 1, "stepName": "validate", "startedAt": "…", "completedAt": "…",
-    "durationMs": 12.4, "status": "Success", "errorType": null, "errorMessage": null },
+    "durationMs": 12.4, "status": "Success", "attempt": 1,
+    "errorType": null, "errorMessage": null },
   { "sequence": 2, "stepName": "charge", "startedAt": "…", "completedAt": "…",
-    "durationMs": 840.1, "status": "Failed",
-    "errorType": "InvalidOperationException", "errorMessage": "card declined" }
+    "durationMs": 840.1, "status": "Failed", "attempt": 1,
+    "errorType": "InvalidOperationException", "errorMessage": "card declined" },
+  { "sequence": 3, "stepName": "charge", "startedAt": "…", "completedAt": "…",
+    "durationMs": 810.7, "status": "Success", "attempt": 2,
+    "errorType": null, "errorMessage": null }
 ]
 ```
 
 Append-only and in execution order. One entry per step **execution**, so a step
 re-entered after a resume appears twice — that is what actually happened, and
 collapsing it would misreport the number of attempts.
+
+**`attempt` starts at 1**, including for a step with no retry policy, so a client
+rendering "attempt N" never has to special-case zero.
+
+It counts *retries*, not *executions*. A step re-entered after a resume reports
+`attempt: 1` again — the step never failed, and numbering it 2 would report a
+failure that did not happen. `sequence` still increments, so the two rows remain
+distinguishable.
 
 **An unknown instance returns an empty array, not 404.** History removed by
 retention is not a client error, and a 404 would make a purged instance look

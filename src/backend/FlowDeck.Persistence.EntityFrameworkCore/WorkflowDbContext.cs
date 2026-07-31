@@ -72,6 +72,9 @@ public sealed class StoredHistoryEntry
 
     public StepStatus Status { get; set; }
 
+    /// <summary>Which attempt at the step this was, from 1 (#107).</summary>
+    public int Attempt { get; set; } = 1;
+
     public string? ErrorType { get; set; }
 
     public string? ErrorMessage { get; set; }

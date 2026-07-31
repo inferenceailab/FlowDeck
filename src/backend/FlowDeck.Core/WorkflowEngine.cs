@@ -284,6 +284,11 @@ public sealed class WorkflowEngine
                 StartedAt = startedAt,
                 CompletedAt = this.timeProvider.GetUtcNow(),
                 Status = result.Status,
+
+                // StepAttempts counts attempts already finished, so the one
+                // just executed is the next number. Read before the increment
+                // below, which is why this is +1 rather than the field itself.
+                Attempt = instance.StepAttempts + 1,
                 ErrorType = result.Error?.GetType().Name,
                 ErrorMessage = result.Error?.Message,
             };

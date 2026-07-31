@@ -132,6 +132,20 @@ h2 {
   color: var(--status-failed);
 }
 
+/*
+  A retried attempt. Deliberately quiet - it qualifies the row rather than
+  competing with the step name and outcome, which are what an operator scans
+  the timeline for.
+*/
+.entry-attempt {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .entry-duration,
 .entry-time {
   font-size: 0.8rem;

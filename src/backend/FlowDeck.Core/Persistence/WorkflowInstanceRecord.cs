@@ -103,6 +103,23 @@ public sealed record StepHistoryEntry
 
     public required StepStatus Status { get; init; }
 
+    /// <summary>
+    /// Which attempt at this step this execution was, starting at 1.
+    /// </summary>
+    /// <remarks>
+    /// One for a step that never retried, so a timeline reads the same either
+    /// way and a client never has to special-case zero.
+    ///
+    /// <para>
+    /// Without it, three entries for one step are ambiguous: a step retried
+    /// three times and a step re-entered three times by successive resumes
+    /// produce identical history. Re-entry after a suspension is deliberately
+    /// <b>not</b> counted as an attempt - the step never failed, so numbering
+    /// it as attempt two would report a failure that did not happen.
+    /// </para>
+    /// </remarks>
+    public int Attempt { get; init; } = 1;
+
     public string? ErrorType { get; init; }
 
     public string? ErrorMessage { get; init; }

@@ -70,6 +70,10 @@ public sealed record InstancePage(
 /// How long the step took. Computed here rather than left to each client, so
 /// every consumer agrees on it.
 /// </param>
+/// <param name="Attempt">
+/// Which attempt at this step this was, from 1. One for a step that never
+/// retried, so a client rendering "attempt N" never has to special-case zero.
+/// </param>
 public sealed record StepHistoryResponse(
     int Sequence,
     string StepName,
@@ -77,6 +81,7 @@ public sealed record StepHistoryResponse(
     DateTimeOffset CompletedAt,
     double DurationMs,
     StepStatus Status,
+    int Attempt,
     string? ErrorType,
     string? ErrorMessage)
 {
@@ -92,6 +97,7 @@ public sealed record StepHistoryResponse(
             entry.CompletedAt,
             (entry.CompletedAt - entry.StartedAt).TotalMilliseconds,
             entry.Status,
+            entry.Attempt,
             entry.ErrorType,
             entry.ErrorMessage);
     }

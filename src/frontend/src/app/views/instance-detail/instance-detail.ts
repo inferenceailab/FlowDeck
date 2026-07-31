@@ -141,4 +141,16 @@ export class InstanceDetail implements OnInit {
   protected isFailurePoint(entry: StepHistoryEntry): boolean {
     return entry.status === 'Failed';
   }
+
+  /**
+   * Whether this entry is a retry rather than a first execution.
+   *
+   * `attempt` is generated as `number | string` because the served OpenAPI
+   * document declares int32 as either. Coerced here rather than compared
+   * loosely in the template, where `'2' > 1` would be a string comparison
+   * quietly doing the right thing for the wrong reason.
+   */
+  protected isRetry(entry: StepHistoryEntry): boolean {
+    return Number(entry.attempt) > 1;
+  }
 }

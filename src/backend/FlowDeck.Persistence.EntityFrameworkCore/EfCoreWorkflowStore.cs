@@ -111,6 +111,7 @@ public sealed class EfCoreWorkflowStore(
                     StartedAt = entry.StartedAt,
                     CompletedAt = entry.CompletedAt,
                     Status = entry.Status,
+                    Attempt = entry.Attempt,
                     ErrorType = entry.ErrorType,
                     ErrorMessage = entry.ErrorMessage,
                 });
@@ -156,6 +157,7 @@ public sealed class EfCoreWorkflowStore(
             StartedAt = row.StartedAt,
             CompletedAt = row.CompletedAt,
             Status = row.Status,
+            Attempt = row.Attempt,
             ErrorType = row.ErrorType,
             ErrorMessage = row.ErrorMessage,
         })];
