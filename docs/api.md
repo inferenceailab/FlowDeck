@@ -26,6 +26,7 @@ they are, and what a client should do about each failure.
 | `GET` | `/api/instances` | List instances, newest first |
 | `GET` | `/api/instances/{instanceId}` | Get one instance |
 | `POST` | `/api/instances/{instanceId}/cancel` | Stop an instance |
+| `GET` | `/api/instances/{instanceId}/history` | Read the step-by-step execution history |
 | `GET` | `/health/live` | Liveness probe |
 | `GET` | `/health/ready` | Readiness probe |
 | `GET` | `/openapi/v1.json` | OpenAPI description |
@@ -96,6 +97,38 @@ retention's job (#20).
 Cancelling a `Completed`, `Failed` or already-`Cancelled` instance is a **409**.
 Terminal states are final — see
 [ADR-0008](adr/0008-terminal-states-are-final.md).
+
+## Execution history
+
+```http
+GET /api/instances/3f2a…/history
+```
+
+```json
+[
+  { "sequence": 1, "stepName": "validate", "startedAt": "…", "completedAt": "…",
+    "durationMs": 12.4, "status": "Success", "errorType": null, "errorMessage": null },
+  { "sequence": 2, "stepName": "charge", "startedAt": "…", "completedAt": "…",
+    "durationMs": 840.1, "status": "Failed",
+    "errorType": "InvalidOperationException", "errorMessage": "card declined" }
+]
+```
+
+Append-only and in execution order. One entry per step **execution**, so a step
+re-entered after a resume appears twice — that is what actually happened, and
+collapsing it would misreport the number of attempts.
+
+**An unknown instance returns an empty array, not 404.** History removed by
+retention is not a client error, and a 404 would make a purged instance look
+like a mistake by the caller.
+
+**`durationMs` is computed server-side**, so every client agrees on it rather
+than each subtracting timestamps and rounding differently.
+
+**Unpaged.** A workflow with thousands of attempts would return a large array,
+which becomes real once retries (#37) exist. No workflow today produces enough
+entries to justify the interface, and saying so is better than a silent
+surprise.
 
 ## Errors
 
