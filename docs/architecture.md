@@ -52,8 +52,9 @@ graph TB
 | `WorkflowEngine` | Drives an instance through its steps | ✅ M1 |
 | `WorkflowInstance` | State of one execution | ✅ M1 |
 | `IWorkflowData` | Per-instance key-value state | ✅ M1 |
-| `IInstanceStore` | Where instances are kept | ⚠️ in-memory only |
-| Persistence provider | Durable instance state | ❌ M2 |
+| `IWorkflowStore` | Durable instances and history | ⚠️ in-memory provider only |
+| `WorkflowInstanceRecord` | Durable checkpoint form | ✅ M2 |
+| EF Core provider | Relational persistence | ❌ #17 |
 | HTTP control plane | Start, query, cancel over HTTP | ❌ M3 |
 | Dashboard | Operator UI | ❌ M4 |
 
@@ -107,7 +108,7 @@ These exist so later milestones can extend the engine without reshaping it.
 
 | Seam | Introduced for | Used by |
 | --- | --- | --- |
-| `IInstanceStore` | #11 | #17 EF Core provider, #16 in-memory test double |
+| `IWorkflowStore` | #16 | #17 EF Core provider; conformance suite is the contract |
 | `TimeProvider` injection | #3 | #8 timestamp assertions, #20 retention |
 | `IWorkflowData.Snapshot()` | #5 | #15 persisting workflow data |
 | `IWorkflowDefinition.InputType` | #10 | #23 validating an HTTP request body |
@@ -157,9 +158,9 @@ none.
 
 | Limitation | Consequence | Tracked by |
 | --- | --- | --- |
-| Instance store is in-memory | All instances lost on restart | #13, #14 |
+| Only an in-memory provider exists | All instances lost on restart | #17 |
 | Instance store is unbounded | Memory grows without limit | #20 |
-| Runtime state lives on the engine | `ResumeAsync` is single-process only | #14, #39 |
+| Resume is not yet proven across a restart | Recovery is untested end to end | #14 |
 | No retry | Any step failure is terminal | #37 |
 | No compensation | Partial work is not undone on failure | #38 |
 | Single node only | No multi-node coordination exists | #39 |

@@ -1,29 +1,32 @@
-using System.Collections.Concurrent;
+using FlowDeck.Core.Persistence;
 
 namespace FlowDeck.Core;
 
 /// <summary>
-/// Executes workflow instances.
+/// Executes workflow instances, checkpointing progress after every step.
 /// </summary>
 /// <remarks>
-/// This implementation runs an instance to a stopping point synchronously on
-/// the calling thread and keeps nothing. Durability arrives with #13, resume
-/// with #14, and multi-node claiming with #39. Keeping it in-memory until
-/// those stories land avoids inventing a persistence shape before there is a
-/// test that constrains it.
+/// Follows ADR-0013: the instance record is the authoritative checkpoint. State
+/// is written after every step, so at most one step of progress can be lost.
+///
+/// <para>
+/// Steps are recompiled from the registry rather than cached across calls, so
+/// an instance can be resumed by any engine holding the same definitions -
+/// including one in a process that did not start it. That is what makes #14
+/// possible.
+/// </para>
 /// </remarks>
 public sealed class WorkflowEngine
 {
     private readonly WorkflowRegistry registry;
     private readonly StepExecutor executor;
     private readonly TimeProvider timeProvider;
-    private readonly IInstanceStore instances;
-    private readonly ConcurrentDictionary<Guid, RuntimeState> runtime = new();
+    private readonly IWorkflowStore store;
 
     public WorkflowEngine(
         WorkflowRegistry registry,
         TimeProvider? timeProvider = null,
-        IInstanceStore? instanceStore = null)
+        IWorkflowStore? store = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -33,102 +36,14 @@ public sealed class WorkflowEngine
         // Injectable so #8 can assert on timestamps without sleeping.
         this.timeProvider = timeProvider ?? TimeProvider.System;
 
-        // Injectable so #17 can substitute a durable store without changing
-        // the engine.
-        this.instances = instanceStore ?? new InMemoryInstanceStore();
+        // Defaults to in-memory so tests and samples need no database. #17
+        // substitutes the EF Core provider without changing this class.
+        this.store = store ?? new InMemoryWorkflowStore();
     }
 
     /// <summary>
-    /// Retrieves an instance by id.
+    /// Starts a new instance and runs it until it completes, suspends or fails.
     /// </summary>
-    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
-    public WorkflowInstance GetInstance(Guid instanceId) => this.instances.Get(instanceId);
-
-    /// <summary>
-    /// Retrieves an instance by id if it exists.
-    /// </summary>
-    public bool TryGetInstance(Guid instanceId, out WorkflowInstance? instance) =>
-        this.instances.TryGet(instanceId, out instance);
-
-    /// <summary>
-    /// Every instance this engine has started, most recently created first.
-    /// </summary>
-    public IReadOnlyCollection<WorkflowInstance> GetInstances() => this.instances.GetAll();
-
-    /// <summary>
-    /// Stops an instance permanently.
-    /// </summary>
-    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
-    /// <exception cref="InvalidStateTransitionException">
-    /// The instance has already reached a terminal state.
-    /// </exception>
-    public WorkflowInstance Cancel(Guid instanceId)
-    {
-        var instance = this.instances.Get(instanceId);
-
-        if (instance.IsTerminal)
-        {
-            throw new InvalidStateTransitionException(
-                instanceId, instance.Status, InstanceStatus.Cancelled);
-        }
-
-        instance.Status = InstanceStatus.Cancelled;
-        instance.CompletedAt = this.timeProvider.GetUtcNow();
-
-        // Dropping the runtime state is what makes cancellation binding rather
-        // than advisory: there is nothing left to resume from. CurrentStepName
-        // is left intact so an operator can still see where it stopped.
-        this.runtime.TryRemove(instanceId, out _);
-
-        return instance;
-    }
-
-    /// <summary>
-    /// Continues a suspended instance from the step it stopped at.
-    /// </summary>
-    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
-    /// <exception cref="InvalidStateTransitionException">
-    /// The instance is not suspended.
-    /// </exception>
-    public async Task<WorkflowInstance> ResumeAsync(
-        Guid instanceId,
-        CancellationToken cancellationToken = default)
-    {
-        var instance = this.instances.Get(instanceId);
-
-        if (instance.Status != InstanceStatus.Suspended
-            || !this.runtime.TryGetValue(instanceId, out var state))
-        {
-            throw new InvalidStateTransitionException(
-                instanceId, instance.Status, InstanceStatus.Running);
-        }
-
-        instance.Status = InstanceStatus.Running;
-
-        await this.RunAsync(instance, state.Steps, state.Data, state.Input, cancellationToken)
-            .ConfigureAwait(false);
-
-        return instance;
-    }
-
-    /// <summary>
-    /// What an in-flight instance needs in order to be continued.
-    /// </summary>
-    /// <remarks>
-    /// Held in memory on this engine, so it does not survive a restart. That is
-    /// exactly what #13 and #14 exist to fix; this is enough to make suspension
-    /// meaningful within one process.
-    /// </remarks>
-    private sealed record RuntimeState(IReadOnlyList<StepDeclaration> Steps, IWorkflowData Data, object? Input);
-
-    /// <summary>
-    /// Starts a new instance of a definition and runs it until it completes,
-    /// suspends or fails.
-    /// </summary>
-    /// <exception cref="DefinitionNotFoundException">No such definition.</exception>
-    /// <exception cref="InvalidWorkflowDefinitionException">
-    /// The definition declares no steps, or declares a duplicate step name.
-    /// </exception>
     public Task<WorkflowInstance> StartAsync(
         string definitionId,
         int version,
@@ -156,8 +71,8 @@ public sealed class WorkflowEngine
 
         var definition = this.registry.Get(definitionId, version);
 
-        // Validated before anything is constructed, so a mismatched start
-        // cannot leave a half-built instance behind.
+        // Validated before anything is created, so a mismatched start cannot
+        // leave a half-built instance behind.
         ValidateInput(definition, input);
 
         var steps = Compile(definition);
@@ -165,16 +80,13 @@ public sealed class WorkflowEngine
         var instance = new WorkflowInstance(
             Guid.NewGuid(), definition.Id, definition.Version, this.timeProvider.GetUtcNow());
 
-        // One store per instance. Constructed here rather than shared on the
-        // engine so that concurrent instances of the same definition cannot
-        // see each other's writes.
         var data = new WorkflowData();
 
-        // Recorded before execution starts, so an instance that suspends or
+        // Written before execution starts, so an instance that suspends or
         // fails partway is still queryable. Recording it afterwards would hide
         // exactly the instances an operator needs to find.
-        this.instances.Add(instance);
-        this.runtime[instance.Id] = new RuntimeState(steps, data, input);
+        await this.store.CreateAsync(instance.ToRecord(data, input), cancellationToken).ConfigureAwait(false);
+        instance.Revision = 1;
 
         await this.RunAsync(instance, steps, data, input, cancellationToken).ConfigureAwait(false);
 
@@ -182,14 +94,100 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
-    /// Checks the supplied input against what the definition declares.
+    /// Continues a suspended instance from the step it stopped at.
     /// </summary>
-    /// <remarks>
-    /// Both directions are errors. A missing required input would surface as a
-    /// null inside step code far from its cause, and an input handed to a
-    /// definition that declares none would be silently discarded, leaving the
-    /// author believing it was delivered.
-    /// </remarks>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">Not suspended.</exception>
+    public async Task<WorkflowInstance> ResumeAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        if (record.Status != InstanceStatus.Suspended)
+        {
+            throw new InvalidStateTransitionException(instanceId, record.Status, InstanceStatus.Running);
+        }
+
+        var definition = this.registry.Get(record.DefinitionId, record.DefinitionVersion);
+        var steps = Compile(definition);
+
+        var instance = WorkflowInstance.FromRecord(record);
+        instance.Status = InstanceStatus.Running;
+
+        var data = new WorkflowData(record.Data);
+
+        await this.RunAsync(instance, steps, data, record.Input, cancellationToken).ConfigureAwait(false);
+
+        return instance;
+    }
+
+    /// <summary>Retrieves an instance by id.</summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    public async Task<WorkflowInstance> GetInstanceAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        return WorkflowInstance.FromRecord(record);
+    }
+
+    /// <summary>Retrieves an instance by id, or null if unknown.</summary>
+    public async Task<WorkflowInstance?> FindInstanceAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return record is null ? null : WorkflowInstance.FromRecord(record);
+    }
+
+    /// <summary>Lists instances, most recently created first.</summary>
+    public async Task<IReadOnlyList<WorkflowInstance>> ListInstancesAsync(
+        InstanceFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        var records = await this.store
+            .ListAsync(filter ?? new InstanceFilter(), cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. records.Select(WorkflowInstance.FromRecord)];
+    }
+
+    /// <summary>Stops an instance permanently.</summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">Already terminal.</exception>
+    public async Task<WorkflowInstance> CancelAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        var instance = WorkflowInstance.FromRecord(record);
+
+        if (instance.IsTerminal)
+        {
+            throw new InvalidStateTransitionException(instanceId, instance.Status, InstanceStatus.Cancelled);
+        }
+
+        instance.Status = InstanceStatus.Cancelled;
+        instance.CompletedAt = this.timeProvider.GetUtcNow();
+
+        // CurrentStepName is left intact so an operator can still see where the
+        // instance stopped.
+        var saved = await this.store
+            .SaveAsync(instance.ToRecord(new WorkflowData(record.Data), record.Input), [], cancellationToken)
+            .ConfigureAwait(false);
+
+        instance.Revision = saved.Revision;
+
+        return instance;
+    }
+
     private static void ValidateInput(IWorkflowDefinition definition, object? input)
     {
         var expected = definition.InputType;
@@ -215,9 +213,6 @@ public sealed class WorkflowEngine
         }
     }
 
-    /// <summary>
-    /// Compiles a definition into its ordered step list.
-    /// </summary>
     private static IReadOnlyList<StepDeclaration> Compile(IWorkflowDefinition definition)
     {
         var builder = new WorkflowBuilder(definition.Id);
@@ -226,7 +221,7 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
-    /// Drives an instance forward until it completes, suspends or fails.
+    /// Drives an instance forward, checkpointing after every step.
     /// </summary>
     private async Task RunAsync(
         WorkflowInstance instance,
@@ -251,25 +246,50 @@ public sealed class WorkflowEngine
             {
                 instance.Status = InstanceStatus.Failed;
                 instance.Error = result.Error;
+                instance.ErrorType = result.Error?.GetType().Name;
+                instance.ErrorMessage = result.Error?.Message;
                 instance.FailedStepName = result.StepName;
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
+
+                await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             if (!result.ShouldAdvance)
             {
                 // The step asked to be resumed later. Stay positioned on it so
-                // that resuming re-enters the same step rather than skipping it.
+                // resuming re-enters the same step rather than skipping it.
                 instance.Status = InstanceStatus.Suspended;
+
+                await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             instance.CurrentStepIndex++;
+
+            // Checkpointed after advancing, so recovery never re-runs a step
+            // that already completed - the property NFR-1 rests on.
+            await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
         }
 
-        // Every step advanced, so there is nothing left to run.
         instance.CurrentStepName = null;
         instance.Status = InstanceStatus.Completed;
         instance.CompletedAt = this.timeProvider.GetUtcNow();
+
+        await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CheckpointAsync(
+        WorkflowInstance instance,
+        IWorkflowData data,
+        object? input,
+        CancellationToken cancellationToken)
+    {
+        // History is written by #18; state only for now.
+        var saved = await this.store
+            .SaveAsync(instance.ToRecord(data, input), [], cancellationToken)
+            .ConfigureAwait(false);
+
+        instance.Revision = saved.Revision;
     }
 }

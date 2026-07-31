@@ -56,6 +56,17 @@ public sealed record WorkflowInstanceRecord
         new Dictionary<string, object?>(StringComparer.Ordinal);
 
     /// <summary>
+    /// The input the instance was started with, if any.
+    /// </summary>
+    /// <remarks>
+    /// Part of instance state rather than of <see cref="Data"/>: ADR-0006 keeps
+    /// input out of the author-controlled key space, and it must survive a
+    /// restart or a resumed step would see null where it saw a value before.
+    /// Serialisability is #15's problem, same as <see cref="Data"/>.
+    /// </remarks>
+    public object? Input { get; init; }
+
+    /// <summary>
     /// Optimistic concurrency token. Incremented by the store on every save.
     /// </summary>
     /// <remarks>

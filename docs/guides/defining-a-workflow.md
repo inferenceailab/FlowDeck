@@ -181,18 +181,43 @@ if (instance.Status == InstanceStatus.Failed)
 The original exception is preserved unwrapped, and the failing step name is
 recorded separately from execution position.
 
+**An instance you query later has no live exception.** An exception object
+cannot be stored, so only its type and message survive:
+
+```csharp
+var reloaded = await engine.GetInstanceAsync(instance.Id);
+
+reloaded.Error;         // null - always, on a queried instance
+reloaded.ErrorType;     // "InvalidOperationException"
+reloaded.ErrorMessage;  // "card declined"
+```
+
+`Error` is populated only on the instance `StartAsync` returned, in the process
+that ran it.
+
 Remaining steps do not execute. There is **no retry and no compensation** yet
 (#37, #38): any failure is terminal.
 
 ## Querying and cancelling
 
 ```csharp
-var instance = engine.GetInstance(id);            // InstanceNotFoundException if unknown
-engine.TryGetInstance(id, out var maybe);         // false if unknown
-var all = engine.GetInstances();                  // newest first
+var instance = await engine.GetInstanceAsync(id);   // InstanceNotFoundException if unknown
+var maybe    = await engine.FindInstanceAsync(id);  // null if unknown
+var all      = await engine.ListInstancesAsync();   // newest first
 
-engine.Cancel(id);                                // Suspended/Running -> Cancelled
-await engine.ResumeAsync(id);                     // Suspended -> continues
+await engine.CancelAsync(id);                       // Suspended/Running -> Cancelled
+await engine.ResumeAsync(id);                       // Suspended -> continues
+```
+
+Filter and page the list:
+
+```csharp
+var failed = await engine.ListInstancesAsync(new InstanceFilter
+{
+    Status = InstanceStatus.Failed,
+    Skip = 0,
+    Take = 50,
+});
 ```
 
 Terminal states are final. Cancelling a `Completed`, `Failed` or already
