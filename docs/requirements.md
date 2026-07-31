@@ -39,6 +39,20 @@ The architecture deliberately borrows rather than invents:
 - Cross-language step implementations
 - Long-term analytics or reporting beyond execution history
 
+### Unresolved scope question: sagas
+
+The brief names compensation patterns, and #38 covers undoing **this workflow's
+own** completed steps. It has never been decided whether FlowDeck also
+coordinates distributed transactions across **external** services — participants
+with their own local transactions and compensating actions.
+
+The two are materially different. External coordination brings idempotency keys,
+at-least-once delivery and participant registration, and would need its own epic
+rather than sharing #38.
+
+Until decided, treat sagas as **out of scope** and compensation as in scope. The
+distinction is recorded on #38.
+
 ### Explicitly deferred
 
 Visual workflow authoring is deferred to M7 and may begin read-only. The brief
@@ -86,6 +100,30 @@ states steps are implemented directly in C# initially, so a designer that
 | FR-4.3 | An operator can see instance status and step timeline | M4 |
 | FR-4.4 | The dashboard updates without manual refresh | M4 |
 | FR-4.5 | Workflows and runs are visually represented | M7 |
+
+### FR-5 — Operator control
+
+| ID | Requirement | Milestone |
+| --- | --- | --- |
+| FR-5.1 | An operator can cancel an instance | M1 ✅ |
+| FR-5.2 | A suspended instance can be resumed, including after a restart | M10 (#68) |
+| FR-5.3 | A failed instance can be retried | M10 (#66) |
+| FR-5.4 | A completed instance can be re-run | M10 (#66) |
+| FR-5.5 | Actions can be applied to a filtered set, not one at a time | M10 (#66) |
+
+FR-5.2 is a **gap, not a plan**: `ResumeAsync` already exists in the engine but
+arrived as a side effect of #12 with no story, no HTTP endpoint and no dashboard
+exposure. A suspended workflow is currently only completable from inside the
+process that started it.
+
+### FR-6 — Definition versioning
+
+| ID | Requirement | Milestone |
+| --- | --- | --- |
+| FR-6.1 | Identity is `(Id, Version)`; versions coexist | M1 ✅ |
+| FR-6.2 | An instance pins its definition version at start | M1 ✅ |
+| FR-6.3 | In-flight instances of a superseded version have defined behaviour | M9 (#67) |
+| FR-6.4 | A definition version can be retired safely | M9 (#67) |
 
 ## Non-Functional Requirements
 

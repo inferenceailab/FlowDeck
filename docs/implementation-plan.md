@@ -29,7 +29,8 @@ earlier work, that is reported rather than staged as a false RED.
 | M6 | Distributed Execution | #39 | Epic only |
 | M7 | Visual Designer | #40 | Epic only |
 | M8 | Observability | #41 | Epic only |
-| M9 | Production Hardening | #42, #43 | Epic only |
+| M9 | Production Hardening | #42, #43, #67 | Epic only |
+| M10 | Operator Control | #66, #68 | Epic only |
 
 M1–M4 together form one vertical slice: define a workflow in C# → execute it →
 survive a restart → drive it over HTTP → watch it in a dashboard.
@@ -81,6 +82,26 @@ Expect `IInstanceStore` to change — async signatures, concurrency tokens, quer
 predicates. That was anticipated in
 [ADR-0009](adr/0009-in-memory-store-is-temporary.md).
 
+## Backlog gaps found after M1
+
+A review on 2026-07-31 asked whether sagas, compensation, versioning and
+management actions were in the plan. Three of the four were not, or not
+properly. Recorded here because the pattern matters more than the individual
+gaps: the Phase 1 breakdown was decomposed **milestone by milestone**, which
+covers depth well and cross-cutting product areas badly.
+
+| Topic | Was it covered? | Action |
+| --- | --- | --- |
+| **Compensation** | Yes - #38, with real open questions | None |
+| **Sagas** | Title-deep only. #38 said "saga" in its title; its body was entirely compensation | Scope question added to #38: does FlowDeck coordinate *external* participants, or only undo its own steps? Never decided. |
+| **Versioning** | Split badly. Identity versioning done in M1 ([ADR-0001](adr/0001-definition-identity-includes-version.md)); *migration of in-flight instances* was two bullets inside #43, an epic also covering multi-tenancy and performance | Split into #67 as its own epic. #43 rescoped. |
+| **Management actions** | **No.** Cancel was the only operator action in the entire backlog | New milestone M10 and epic #66. `ResumeAsync` shipped with no story at all - #68. |
+
+The `ResumeAsync` case is the sharpest: it is a public engine API that exists
+because #12 needed it to prove a scenario clause, and it has no acceptance
+criteria, no HTTP endpoint and no dashboard exposure. A suspended workflow is
+currently only completable from inside the process that started it.
+
 ## Blocked work
 
 | Blocker | Impact |
@@ -97,6 +118,7 @@ Recorded so it is not repeated.
 | The Phase 1 breakdown created 43 issues, none for documentation | #58; future milestones include documentation stories |
 | ADRs were written retrospectively after M1 | Future ADRs ship in the same PR as the change |
 | Frontend milestones have no stories for accessibility or i18n | Add before M4 begins |
+| Four product areas were under-covered or mis-filed - found by review, not by planning | #66, #67, #68 and a scope question on #38 |
 
 ## Definition of Done
 
