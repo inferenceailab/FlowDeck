@@ -47,3 +47,4 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0018](0018-frontend-state-management.md) | Signals and typed services, no state library | Accepted | M4 |
 | [0019](0019-static-analysis.md) | SonarAnalyzer, with warnings as errors from a clean tree | Accepted | post-M4 |
 | [0020](0020-retry-semantics.md) | Retry semantics | Accepted | M5 |
+| [0021](0021-compensation-semantics.md) | Compensation semantics | Accepted | M5 |
