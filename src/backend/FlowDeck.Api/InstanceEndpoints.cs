@@ -96,7 +96,45 @@ public static class InstanceEndpoints
             .WithName("ListWorkflowInstances")
             .WithSummary("Lists workflow instances, newest first.");
 
+        instances.MapPost("/{instanceId:guid}/cancel", CancelAsync)
+            .WithName("CancelWorkflowInstance")
+            .WithSummary("Stops a workflow instance permanently.");
+
         return endpoints;
+    }
+
+    /// <summary>
+    /// Cancels an instance.
+    /// </summary>
+    /// <remarks>
+    /// <c>POST /cancel</c> rather than <c>DELETE</c> on the instance. Cancelling
+    /// does not remove anything - the instance stays queryable, keeps its
+    /// history and keeps the step it stopped at. <c>DELETE</c> would promise
+    /// removal, and #20's purge is the thing that actually removes.
+    ///
+    /// <para>
+    /// Returns <c>202 Accepted</c> for symmetry with starting: the instance has
+    /// been told to stop, and the engine records that immediately. A caller
+    /// wanting confirmation re-reads the instance.
+    /// </para>
+    ///
+    /// <para>
+    /// Cancelling a terminal instance raises
+    /// <see cref="InvalidStateTransitionException"/>, which the handler maps to
+    /// <c>409 Conflict</c> - the request is well-formed but cannot apply to the
+    /// state the instance is in.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> CancelAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return Results.Accepted(
+            $"/api/instances/{instance.Id}",
+            InstanceResponse.From(instance));
     }
 
     /// <summary>
