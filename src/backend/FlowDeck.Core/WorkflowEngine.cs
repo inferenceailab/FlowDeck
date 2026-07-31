@@ -158,6 +158,19 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
+    /// Counts instances matching a filter, ignoring its paging.
+    /// </summary>
+    /// <remarks>
+    /// A caller rendering "page 3 of 12" needs the total alongside the page. A
+    /// count that respected <c>Skip</c> and <c>Take</c> would always equal the
+    /// page size and tell them nothing.
+    /// </remarks>
+    public Task<int> CountInstancesAsync(
+        InstanceFilter? filter = null,
+        CancellationToken cancellationToken = default) =>
+        this.store.CountAsync(filter ?? new InstanceFilter(), cancellationToken);
+
+    /// <summary>
     /// Reads an instance's execution history, in execution order.
     /// </summary>
     /// <remarks>

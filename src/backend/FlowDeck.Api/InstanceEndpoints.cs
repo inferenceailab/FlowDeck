@@ -1,4 +1,5 @@
 using FlowDeck.Core;
+using FlowDeck.Core.Persistence;
 
 namespace FlowDeck.Api;
 
@@ -45,10 +46,41 @@ public sealed record InstanceResponse(
 }
 
 /// <summary>
+/// One page of instances.
+/// </summary>
+/// <param name="Items">The instances on this page.</param>
+/// <param name="Total">
+/// How many instances match the filter, ignoring paging. A client cannot render
+/// "page 3 of 12" from a page alone.
+/// </param>
+/// <param name="Page">One-based page number.</param>
+/// <param name="PageSize">Maximum items per page.</param>
+public sealed record InstancePage(
+    IReadOnlyList<InstanceResponse> Items,
+    int Total,
+    int Page,
+    int PageSize);
+
+/// <summary>
 /// HTTP surface for inspecting and operating on instances.
 /// </summary>
 public static class InstanceEndpoints
 {
+    /// <summary>
+    /// Largest page a caller may request.
+    /// </summary>
+    /// <remarks>
+    /// An unbounded <c>pageSize</c> lets one request pull the whole table,
+    /// which is a denial-of-service vector long before it is a slow dashboard.
+    /// Requests above this are clamped rather than rejected: the caller still
+    /// gets data, and <c>PageSize</c> in the response says what they actually
+    /// got.
+    /// </remarks>
+    public const int MaxPageSize = 200;
+
+    /// <summary>Default page size when none is supplied.</summary>
+    public const int DefaultPageSize = 50;
+
     /// <summary>Maps the instance endpoints.</summary>
     public static IEndpointRouteBuilder MapInstanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -60,7 +92,51 @@ public static class InstanceEndpoints
             .WithName("GetWorkflowInstance")
             .WithSummary("Retrieves a single workflow instance.");
 
+        instances.MapGet("/", ListAsync)
+            .WithName("ListWorkflowInstances")
+            .WithSummary("Lists workflow instances, newest first.");
+
         return endpoints;
+    }
+
+    /// <summary>
+    /// Lists instances, newest first, with paging and optional filters.
+    /// </summary>
+    /// <remarks>
+    /// Paging is one-based because it is user-facing: a dashboard shows "page
+    /// 1", not "page 0". The offset arithmetic lives here rather than in every
+    /// client.
+    /// </remarks>
+    private static async Task<IResult> ListAsync(
+        WorkflowEngine engine,
+        InstanceStatus? status = null,
+        string? definitionId = null,
+        int page = 1,
+        int pageSize = DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        // Clamped rather than rejected. A client that asks for page 0 or 10,000
+        // items has made a mistake it can recover from, and the response states
+        // what it actually got.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        var filter = new InstanceFilter
+        {
+            Status = status,
+            DefinitionId = definitionId,
+            Skip = (page - 1) * pageSize,
+            Take = pageSize,
+        };
+
+        var instances = await engine.ListInstancesAsync(filter, cancellationToken).ConfigureAwait(false);
+        var total = await engine.CountInstancesAsync(filter, cancellationToken).ConfigureAwait(false);
+
+        return Results.Ok(new InstancePage(
+            [.. instances.Select(InstanceResponse.From)],
+            total,
+            page,
+            pageSize));
     }
 
     /// <summary>
