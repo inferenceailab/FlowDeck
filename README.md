@@ -45,6 +45,7 @@ Full walkthrough: [Defining a workflow](docs/guides/defining-a-workflow.md).
 | [Prior art](docs/prior-art.md) | What is borrowed from other engines, and what differs |
 | [Defining a workflow](docs/guides/defining-a-workflow.md) | Usage guide |
 | [Writing a persistence provider](docs/guides/writing-a-persistence-provider.md) | Implementing `IWorkflowStore` |
+| [API error contract](docs/api-errors.md) | What every error response means |
 | [Deployment](deploy/README.md) | CI/CD and homelab setup |
 | [Security](SECURITY.md) | Reporting vulnerabilities, enabled protections |
 
