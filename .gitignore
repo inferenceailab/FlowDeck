@@ -37,4 +37,5 @@ venv/
 Thumbs.db
 .idea/
 .vscode/
+.vs/
 *.log

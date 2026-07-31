@@ -1,0 +1,30 @@
+# FlowDeck Documentation
+
+| Document | Read it for |
+| --- | --- |
+| [Requirements](requirements.md) | What FlowDeck is meant to do, and explicitly not do |
+| [Architecture](architecture.md) | How it is built, and where it is knowingly incomplete |
+| [Implementation plan](implementation-plan.md) | Milestone roadmap and current status |
+| [Decision records](adr/README.md) | Why things are the way they are |
+| [Defining a workflow](guides/defining-a-workflow.md) | How to use the library |
+| [Deployment](../deploy/README.md) | CI/CD and homelab setup |
+| [Security policy](../SECURITY.md) | Reporting vulnerabilities, enabled protections |
+
+## Where to start
+
+**Using the library** → [Defining a workflow](guides/defining-a-workflow.md).
+
+**Contributing** → [Architecture](architecture.md), then
+[decision records](adr/README.md). The ADRs explain constraints that are not
+obvious from the code.
+
+**Assessing the project** → [Implementation plan](implementation-plan.md) for
+status, then the *Known limitations* section of
+[Architecture](architecture.md). Both state what does not work as plainly as
+what does.
+
+## Conventions
+
+- Documentation describes **what exists**. Planned work is labelled as such.
+- Known limitations are stated explicitly, with the issue tracking each one.
+- Non-obvious decisions get an ADR, in the same pull request as the change.
