@@ -6,6 +6,12 @@ const angular = require('angular-eslint');
 
 module.exports = defineConfig([
   {
+    // Generated from openapi.json by `npm run generate:api` and never
+    // hand-edited. Linting it produces failures nobody may fix, which would
+    // either block the build or teach people to ignore lint output.
+    ignores: ['src/app/api/schema.ts'],
+  },
+  {
     files: ['**/*.ts'],
     extends: [
       eslint.configs.recommended,

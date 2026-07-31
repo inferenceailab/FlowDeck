@@ -3,6 +3,18 @@ namespace FlowDeck.Core;
 /// <summary>
 /// Lifecycle state of a workflow instance.
 /// </summary>
+/// <remarks>
+/// Serialised by name, not ordinal. The attribute lives on the type rather than
+/// in host configuration so every serialiser agrees - a client that forgot to
+/// configure a converter would otherwise read <c>2</c> and have to guess.
+///
+/// <para>
+/// Names are also stable in a way ordinals are not: inserting a status in the
+/// middle of this enum would silently change the meaning of every value already
+/// transmitted or stored.
+/// </para>
+/// </remarks>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum InstanceStatus
 {
     /// <summary>Actively executing, or ready to continue.</summary>
@@ -24,6 +36,8 @@ public enum InstanceStatus
 /// <summary>
 /// Whether a single step execution succeeded.
 /// </summary>
+/// <remarks>Serialised by name — see <see cref="InstanceStatus"/>.</remarks>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum StepStatus
 {
     Success = 0,
