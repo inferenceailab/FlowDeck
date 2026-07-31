@@ -1,6 +1,7 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withFetch } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { InstanceList } from './instance-list';
 import { InstancePage } from '../../api/models';
 import { expectNoAccessibilityViolations } from '../../testing/accessibility';
@@ -47,7 +48,7 @@ describe('InstanceList states', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [InstanceList],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(withFetch()), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(InstanceList);

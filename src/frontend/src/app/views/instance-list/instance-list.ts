@@ -1,4 +1,5 @@
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { InstanceService } from '../../api/instance.service';
 import { LoadState, describeHttpError, failed, loading, ready } from '../../api/load-state';
@@ -13,7 +14,7 @@ import { StatusBadge } from '../../components/status-badge/status-badge';
  */
 @Component({
   selector: 'app-instance-list',
-  imports: [DatePipe, StatusBadge],
+  imports: [DatePipe, RouterLink, StatusBadge],
   templateUrl: './instance-list.html',
   styleUrl: './instance-list.css',
 })

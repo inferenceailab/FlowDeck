@@ -22,6 +22,15 @@ export const routes: Routes = [
     loadComponent: () => import('./views/instance-list/instance-list').then((m) => m.InstanceList),
   },
   {
+    // Deliberately a sibling of the list rather than a child route. The detail
+    // view fetches by id and does not need the list loaded, so nesting would
+    // couple them for no benefit.
+    path: 'instances/:instanceId',
+    title: 'Instance - FlowDeck',
+    loadComponent: () =>
+      import('./views/instance-detail/instance-detail').then((m) => m.InstanceDetail),
+  },
+  {
     path: 'workflows',
     title: 'Workflows - FlowDeck',
     loadComponent: () => import('./views/workflow-list/workflow-list').then((m) => m.WorkflowList),

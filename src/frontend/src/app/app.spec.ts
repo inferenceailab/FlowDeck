@@ -1,4 +1,4 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withFetch } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
@@ -25,7 +25,7 @@ describe('App shell', () => {
         // init. Without a testing backend that request escapes to the network
         // and surfaces as an unhandled rejection that fails the run while every
         // assertion still passes - a green suite next to a red exit code.
-        provideHttpClient(),
+        provideHttpClient(withFetch()),
         provideHttpClientTesting(),
       ],
     }).compileComponents();
