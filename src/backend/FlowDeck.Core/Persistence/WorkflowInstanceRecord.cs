@@ -26,6 +26,9 @@ public sealed record WorkflowInstanceRecord
     /// <summary>Zero-based index of the step the instance is positioned at.</summary>
     public required int CurrentStepIndex { get; init; }
 
+    /// <summary>How many times the current step has executed (ADR-0020).</summary>
+    public int StepAttempts { get; init; }
+
     /// <summary>Step the instance is positioned at, or null once all have run.</summary>
     public string? CurrentStepName { get; init; }
 

@@ -21,11 +21,13 @@ public sealed class WorkflowEngine
     private readonly WorkflowRegistry registry;
     private readonly TimeProvider timeProvider;
     private readonly IWorkflowStore store;
+    private readonly Random? random;
 
     public WorkflowEngine(
         WorkflowRegistry registry,
         TimeProvider? timeProvider = null,
-        IWorkflowStore? store = null)
+        IWorkflowStore? store = null,
+        Random? random = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -36,6 +38,10 @@ public sealed class WorkflowEngine
         // Defaults to in-memory so tests and samples need no database. #17
         // substitutes the EF Core provider without changing this class.
         this.store = store ?? new InMemoryWorkflowStore();
+
+        // Injectable so a jitter test can pin the delay. Randomness that
+        // cannot be pinned makes a backoff test either flaky or vacuous.
+        this.random = random;
     }
 
     /// <summary>
@@ -284,6 +290,30 @@ public sealed class WorkflowEngine
 
             if (result.Status == StepStatus.Failed)
             {
+                instance.StepAttempts++;
+
+                if (step.RetryPolicy.AllowsAnotherAttempt(instance.StepAttempts))
+                {
+                    // Checkpointed before waiting, so the attempt count is
+                    // durable. An in-memory counter would reset on restart and
+                    // a host recycling during an outage would retry forever.
+                    await this.CheckpointAsync(instance, data, input, [entry], cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var delay = step.RetryPolicy.DelayBefore(instance.StepAttempts + 1, this.random);
+
+                    if (delay > TimeSpan.Zero)
+                    {
+                        // Blocks the caller. The engine is synchronous, so
+                        // there is nowhere else for the wait to live yet -
+                        // releasing the worker is a scheduling question that
+                        // overlaps #39, and ADR-0020 leaves it open.
+                        await Task.Delay(delay, this.timeProvider, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    continue;
+                }
+
                 instance.Status = InstanceStatus.Failed;
                 instance.Error = result.Error;
                 instance.ErrorType = result.Error?.GetType().Name;
@@ -294,6 +324,11 @@ public sealed class WorkflowEngine
                 await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
                 return;
             }
+
+            // Reset on success: advancing past a step means the next arrival at
+            // any step starts fresh, rather than inheriting a count from work
+            // that has already succeeded.
+            instance.StepAttempts = 0;
 
             if (!result.ShouldAdvance)
             {
