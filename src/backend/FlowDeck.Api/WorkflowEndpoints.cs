@@ -14,6 +14,18 @@ namespace FlowDeck.Api;
 public sealed record StartInstanceResponse(Guid InstanceId, InstanceStatus Status);
 
 /// <summary>
+/// A registered workflow definition, as the API describes it.
+/// </summary>
+/// <param name="Id">Definition identifier.</param>
+/// <param name="Version">Definition version.</param>
+/// <param name="InputTypeName">
+/// Name of the input type this definition requires, or <see langword="null"/> if
+/// it takes none. The name only - not a schema, and never an assembly-qualified
+/// name, which would tell a caller more about the deployment than it needs.
+/// </param>
+public sealed record WorkflowDefinitionResponse(string Id, int Version, string? InputTypeName);
+
+/// <summary>
 /// HTTP surface for starting and inspecting workflow instances.
 /// </summary>
 public static class WorkflowEndpoints
@@ -29,7 +41,38 @@ public static class WorkflowEndpoints
             .WithName("StartWorkflowInstance")
             .WithSummary("Starts a new instance of a workflow definition.");
 
+        workflows.MapGet("/", ListDefinitionsAsync)
+            .WithName("ListWorkflowDefinitions")
+            .WithSummary("Lists the workflow definitions this host has registered.");
+
         return endpoints;
+    }
+
+    /// <summary>
+    /// Lists every registered definition, by id then version.
+    /// </summary>
+    /// <remarks>
+    /// Answers the question an operator actually has after a deployment: "does
+    /// this host know about the workflow I just shipped, at the version I
+    /// expect?" Without it that is only discoverable by starting an instance,
+    /// which has side effects.
+    ///
+    /// <para>
+    /// Read-only. Definitions are C# classes registered at startup, so there is
+    /// nothing to POST - the brief specifies steps implemented directly in C#,
+    /// and #40 is where authoring over the wire would be decided.
+    /// </para>
+    /// </remarks>
+    private static Task<IResult> ListDefinitionsAsync(WorkflowRegistry registry)
+    {
+        var definitions = registry.GetAll()
+            .Select(definition => new WorkflowDefinitionResponse(
+                definition.Id,
+                definition.Version,
+                definition.InputType?.Name))
+            .ToArray();
+
+        return Task.FromResult(Results.Ok(definitions));
     }
 
     /// <summary>
