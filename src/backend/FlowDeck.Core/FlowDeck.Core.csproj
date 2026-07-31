@@ -6,4 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      So tests can compile a definition the way the engine does, without
+      WorkflowBuilder becoming public. Widening the API surface to suit a test
+      would make an internal detail something consumers can depend on and this
+      project then has to keep.
+    -->
+    <InternalsVisibleTo Include="FlowDeck.Core.Tests" />
+  </ItemGroup>
+
 </Project>
