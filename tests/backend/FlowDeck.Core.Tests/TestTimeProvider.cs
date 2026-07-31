@@ -1,28 +1,18 @@
-namespace FlowDeck.Core.Tests;
-
-/// <summary>
-/// A <see cref="TimeProvider"/> whose clock only moves when a test moves it.
-/// </summary>
-/// <remarks>
-/// Hand-rolled rather than taking a dependency on
-/// Microsoft.Extensions.TimeProvider.Testing: the engine needs exactly one
-/// capability here - a UTC clock under test control - and a package would add
-/// a supply-chain dependency to earn it.
-/// </remarks>
-internal sealed class TestTimeProvider(DateTimeOffset start) : TimeProvider
-{
-    private DateTimeOffset now = start;
-
-    public override DateTimeOffset GetUtcNow() => this.now;
-
-    /// <summary>Moves the clock forward.</summary>
-    public void Advance(TimeSpan by)
-    {
-        if (by < TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(by), "Time does not run backwards.");
-        }
-
-        this.now = this.now.Add(by);
-    }
-}
+// A controllable clock for tests.
+//
+// This was hand-rolled to avoid a dependency, on the stated grounds that the
+// engine needed exactly one capability from it: a UTC clock under test control.
+// Retry (#105) needs a second - controllable *timers*, so that `Task.Delay`
+// with a TimeProvider does not sleep for real - and that is substantially more
+// than a clock. Overriding only GetUtcNow left CreateTimer falling through to
+// the base implementation, so a retry test genuinely waited three seconds while
+// its comment claimed otherwise.
+//
+// Microsoft.Extensions.TimeProvider.Testing implements both correctly and is
+// test-only, so it never reaches a shipped artefact. ADR-0010 asks for a
+// dependency to be justified rather than assumed; this is the justification.
+//
+// Aliased rather than replaced at every call site: FakeTimeProvider already
+// exposes the constructor and Advance signature the existing tests use, so the
+// change is one line instead of thirty-four edits.
+global using TestTimeProvider = Microsoft.Extensions.Time.Testing.FakeTimeProvider;
