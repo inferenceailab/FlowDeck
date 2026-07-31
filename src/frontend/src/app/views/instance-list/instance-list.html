@@ -1,59 +1,94 @@
 <h1 i18n>Instances</h1>
 
 <!--
-  A real <table>, not divs with grid. Instances are tabular data, and a table
-  gives a screen reader row and column context for free - "Status, Failed, row 3
-  of 12" - which a div layout cannot without a pile of ARIA that will drift.
+  aria-live="polite" so a state change is announced rather than silently
+  repainting. A sighted user sees the spinner replaced by a table; without this
+  a screen reader user gets nothing at all.
 -->
-<table class="instance-table">
-  <caption class="visually-hidden" i18n>
-    Workflow instances, most recently started first
-  </caption>
+<div aria-live="polite" [attr.aria-busy]="state().kind === 'loading'">
+  @switch (state().kind) {
+    @case ('loading') {
+      <p class="state state-loading" i18n>Loading instances…</p>
+    }
 
-  <thead>
-    <tr>
-      <th scope="col" i18n>Instance</th>
-      <th scope="col" i18n>Workflow</th>
-      <th scope="col" i18n>Status</th>
-      <th scope="col" i18n>Started</th>
-      <th scope="col" i18n>Step</th>
-    </tr>
-  </thead>
-
-  <tbody>
-    @for (instance of page()?.items ?? []; track instance.id) {
+    @case ('error') {
       <!--
-        The failure styling is a left border and a tinted background, on top of
-        the badge that already carries a glyph and a word. Rows are not
-        distinguished by colour alone.
+        role="alert" rather than relying on the live region: a failure should
+        interrupt, not wait politely behind whatever else is being announced.
       -->
-      <tr [class.row-failed]="instance.status === 'Failed'">
-        <td>
-          <code [title]="instance.id">{{ shortId(instance) }}</code>
-        </td>
-
-        <td>
-          {{ instance.definitionId }}
-          <span class="version" i18n>v{{ instance.definitionVersion }}</span>
-        </td>
-
-        <td>
-          <app-status-badge [status]="instance.status" />
-        </td>
+      <div class="state state-error" role="alert">
+        <p>
+          <strong i18n>Could not load instances.</strong>
+        </p>
 
         <!--
-          Rendered in the viewer's local time from the UTC the API returns. An
-          operator reasons in their own timezone; the full timestamp stays in
-          the title for anyone comparing across zones (ADR-0017).
+          The API returns RFC 9457 problem details whose `detail` names the
+          definition, instance or types involved. Showing "an error occurred"
+          instead would discard the only actionable part.
         -->
-        <td>
-          <time [attr.datetime]="instance.createdAt" [title]="instance.createdAt">
-            {{ instance.createdAt | date: 'medium' }}
-          </time>
-        </td>
+        <p class="state-detail">{{ errorMessage() }}</p>
 
-        <td>{{ instance.currentStepName ?? '—' }}</td>
-      </tr>
+        <button type="button" (click)="load()" i18n>Try again</button>
+      </div>
     }
-  </tbody>
-</table>
+
+    @case ('ready') {
+      @if (page().items.length === 0) {
+        <!--
+          An empty state, not an empty table. A table with headers and no rows
+          reads as broken; this says nothing is wrong, there is simply nothing
+          yet.
+        -->
+        <div class="state state-empty">
+          <p><strong i18n>No workflow instances yet.</strong></p>
+          <p class="state-detail" i18n>
+            Start one through the API and it will appear here.
+          </p>
+        </div>
+      } @else {
+        <table class="instance-table">
+          <caption class="visually-hidden" i18n>
+            Workflow instances, most recently started first
+          </caption>
+
+          <thead>
+            <tr>
+              <th scope="col" i18n>Instance</th>
+              <th scope="col" i18n>Workflow</th>
+              <th scope="col" i18n>Status</th>
+              <th scope="col" i18n>Started</th>
+              <th scope="col" i18n>Step</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (instance of page().items; track instance.id) {
+              <tr [class.row-failed]="instance.status === 'Failed'">
+                <td>
+                  <code [title]="instance.id">{{ shortId(instance) }}</code>
+                </td>
+
+                <td>
+                  {{ instance.definitionId }}
+                  <span class="version" i18n>v{{ instance.definitionVersion }}</span>
+                </td>
+
+                <td>
+                  <app-status-badge [status]="instance.status" />
+                </td>
+
+                <td>
+                  <time [attr.datetime]="instance.createdAt" [title]="instance.createdAt">
+                    {{ instance.createdAt | date: 'medium' }}
+                  </time>
+                </td>
+
+                <td>{{ instance.currentStepName ?? '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    }
+  }
+</div>
