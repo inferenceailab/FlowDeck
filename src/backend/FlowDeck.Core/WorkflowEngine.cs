@@ -157,6 +157,19 @@ public sealed class WorkflowEngine
         return [.. records.Select(WorkflowInstance.FromRecord)];
     }
 
+    /// <summary>
+    /// Reads an instance's execution history, in execution order.
+    /// </summary>
+    /// <remarks>
+    /// Append-only and never rewritten: one entry per step execution, including
+    /// failures and suspensions. Empty for an unknown instance rather than an
+    /// error - history that has been purged (#20) is not an exceptional case.
+    /// </remarks>
+    public Task<IReadOnlyList<StepHistoryEntry>> GetHistoryAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default) =>
+        this.store.GetHistoryAsync(instanceId, cancellationToken);
+
     /// <summary>Stops an instance permanently.</summary>
     /// <exception cref="InstanceNotFoundException">No such instance.</exception>
     /// <exception cref="InvalidStateTransitionException">Already terminal.</exception>
@@ -237,10 +250,27 @@ public sealed class WorkflowEngine
             var step = steps[instance.CurrentStepIndex];
             instance.CurrentStepName = step.Name;
 
+            var startedAt = this.timeProvider.GetUtcNow();
+
             var context = new StepContext(instance.Id, step.Name, data, input);
             var result = await this.executor
                 .ExecuteAsync(step.Factory(), context, cancellationToken)
                 .ConfigureAwait(false);
+
+            // Recorded for every execution, including failures and suspensions.
+            // History that only covered successes would be silent about exactly
+            // the runs an operator opens it to investigate.
+            var entry = new StepHistoryEntry
+            {
+                InstanceId = instance.Id,
+                Sequence = 0, // assigned by the store
+                StepName = step.Name,
+                StartedAt = startedAt,
+                CompletedAt = this.timeProvider.GetUtcNow(),
+                Status = result.Status,
+                ErrorType = result.Error?.GetType().Name,
+                ErrorMessage = result.Error?.Message,
+            };
 
             if (result.Status == StepStatus.Failed)
             {
@@ -251,7 +281,7 @@ public sealed class WorkflowEngine
                 instance.FailedStepName = result.StepName;
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
 
-                await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
+                await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -261,7 +291,7 @@ public sealed class WorkflowEngine
                 // resuming re-enters the same step rather than skipping it.
                 instance.Status = InstanceStatus.Suspended;
 
-                await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
+                await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -269,25 +299,27 @@ public sealed class WorkflowEngine
 
             // Checkpointed after advancing, so recovery never re-runs a step
             // that already completed - the property NFR-1 rests on.
-            await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
+            await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
         }
 
         instance.CurrentStepName = null;
         instance.Status = InstanceStatus.Completed;
         instance.CompletedAt = this.timeProvider.GetUtcNow();
 
-        await this.CheckpointAsync(instance, data, input, cancellationToken).ConfigureAwait(false);
+        await this.CheckpointAsync(instance, data, input, [], cancellationToken).ConfigureAwait(false);
     }
 
     private async Task CheckpointAsync(
         WorkflowInstance instance,
         IWorkflowData data,
         object? input,
+        IReadOnlyList<StepHistoryEntry> history,
         CancellationToken cancellationToken)
     {
-        // History is written by #18; state only for now.
+        // State and history go together: ADR-0013 requires the store to write
+        // them atomically, so a crash cannot leave one without the other.
         var saved = await this.store
-            .SaveAsync(instance.ToRecord(data, input), [], cancellationToken)
+            .SaveAsync(instance.ToRecord(data, input), history, cancellationToken)
             .ConfigureAwait(false);
 
         instance.Revision = saved.Revision;
