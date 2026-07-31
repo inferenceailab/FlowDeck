@@ -160,7 +160,7 @@ none.
 | --- | --- | --- |
 | Only an in-memory provider exists | All instances lost on restart | #17 |
 | Instance store is unbounded | Memory grows without limit | #20 |
-| Resume is not yet proven across a restart | Recovery is untested end to end | #14 |
+| Resume requires the definition to be registered on the recovering host | An unknown definition cannot be resumed | #67 |
 | No retry | Any step failure is terminal | #37 |
 | No compensation | Partial work is not undone on failure | #38 |
 | Single node only | No multi-node coordination exists | #39 |
