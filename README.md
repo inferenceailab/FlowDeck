@@ -6,9 +6,12 @@ Workflow steps are written in C#. The engine handles everything around that
 code: sequencing it, giving it somewhere to keep state, surviving restarts,
 retrying what is worth retrying, and showing an operator what happened.
 
-> **Status: early.** M1 (core engine primitives) is complete — 81 tests.
-> Everything is in memory: instances are lost on process restart, there is no
-> HTTP API, no dashboard, no retry and no persistence. See
+> **Status: early, but working end to end.** M1–M4 complete — 293 backend tests
+> and 53 frontend tests. A workflow can be defined in C#, executed, persisted,
+> resumed after a restart, driven over HTTP and watched in an Angular dashboard.
+>
+> **There is no authentication.** Anything that can reach the API can start,
+> inspect and cancel workflows. No retry, no compensation, single node only. See
 > [known limitations](docs/architecture.md#known-limitations).
 
 ## What it looks like
@@ -61,7 +64,15 @@ dotnet test
 dotnet format --verify-no-changes --severity warn
 ```
 
-Angular 22 frontend arrives with M4 and is not yet scaffolded.
+Frontend (Angular 22, requires **Node 24**):
+
+```sh
+cd src/frontend
+npm ci
+npm test -- --watch=false
+npm run lint
+npm run build
+```
 
 ## Contributing
 
