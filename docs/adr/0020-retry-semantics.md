@@ -108,8 +108,31 @@ checkpoint.
 **A dead-letter state.** Revisit if operators need to distinguish "failed once"
 from "failed and exhausted retries" in a way the attempt count cannot express.
 
-## Open, deliberately
+## The delayed retry blocks — decided 2026-07-31
 
-Whether a delayed retry should occupy a worker or release it is left to the
-stories. The current engine is synchronous, so the first implementation will
-block; making it release is a scheduling question that overlaps #39.
+This was left open when the ADR was written. It is now settled: **a delayed
+retry blocks the calling thread**, and no scheduler is built for it.
+
+The engine is synchronous, so a `Task.Delay` between attempts holds the caller.
+For the short backoffs retry is actually for — a second, five seconds — that is
+correct and costs nothing. It is wrong for long ones.
+
+**The limits, stated rather than discovered:**
+
+- A five-minute backoff means a five-minute HTTP request, which no client will
+  tolerate and most proxies will cut.
+- Every waiting instance occupies a worker for the whole delay.
+- Retry is therefore only usable today for backoffs measured in seconds.
+
+The alternative — suspend with a "retry after" timestamp and let a sweeper
+resume — releases the worker and is the right long-term answer. It needs a
+scheduler, a sweeper and a new instance field, and it overlaps heavily with
+#39, which has to solve instance claiming and orphan recovery anyway. Building
+a second scheduler now and reconciling it with #39's later would be worse than
+waiting.
+
+Capping `MaxDelay` to make the limit a rule was considered and rejected: it
+would forbid legitimate long backoffs outright rather than letting an author
+choose one knowingly.
+
+**Revisit with #39.**

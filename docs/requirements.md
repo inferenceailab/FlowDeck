@@ -39,19 +39,25 @@ The architecture deliberately borrows rather than invents:
 - Cross-language step implementations
 - Long-term analytics or reporting beyond execution history
 
-### Unresolved scope question: sagas
+### Sagas: decided 2026-07-31
 
-The brief names compensation patterns, and #38 covers undoing **this workflow's
-own** completed steps. It has never been decided whether FlowDeck also
-coordinates distributed transactions across **external** services — participants
-with their own local transactions and compensating actions.
+**Compensation is in scope. Coordination across external participants is not,
+for now.**
 
-The two are materially different. External coordination brings idempotency keys,
-at-least-once delivery and participant registration, and would need its own epic
-rather than sharing #38.
+- **#38 — compensation.** FlowDeck undoes *its own* completed steps when a
+  workflow fails. A compensating action is a step like any other; whether it
+  reaches an external service is the author's business, not the engine's.
+- **#111 — saga coordination.** Guaranteeing that work spread across services
+  FlowDeck does not control either completes everywhere or is compensated
+  everywhere. Raised as an epic and **deliberately unscheduled**.
 
-Until decided, treat sagas as **out of scope** and compensation as in scope. The
-distinction is recorded on #38.
+The second is not a bigger version of the first — it is a different problem,
+bringing idempotency keys, at-least-once delivery with an outbox, participant
+registration and stuck-participant handling.
+
+#111 stays unscheduled until there is a concrete workflow spanning services
+FlowDeck does not control. Designing it without one would produce an
+abstraction fitted to an imagined case.
 
 ### Explicitly deferred
 
