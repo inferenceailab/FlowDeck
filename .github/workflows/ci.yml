@@ -33,15 +33,19 @@ jobs:
 
       # Phase 3 has not created the solution yet. Until it does, the build
       # steps below are skipped rather than failing the pipeline.
+      # .NET 10 scaffolds the XML solution format (.slnx) by default, so both
+      # extensions must be matched. Globbing only *.sln silently skips the
+      # entire backend build.
       - name: Detect backend solution
         id: detect
         shell: bash
         run: |
-          if ls src/backend/*.sln >/dev/null 2>&1 || ls *.sln >/dev/null 2>&1; then
+          if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \
+             || compgen -G 'src/backend/*.sln' >/dev/null || compgen -G 'src/backend/*.slnx' >/dev/null; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No .sln found yet - backend build skipped until Phase 3 lands."
+            echo "::notice::No .sln or .slnx found yet - backend build skipped until Phase 3 lands."
           fi
 
       - name: Set up .NET
