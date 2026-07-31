@@ -53,8 +53,25 @@ public sealed class WorkflowInstance
     /// </summary>
     public DateTimeOffset? CompletedAt { get; internal set; }
 
-    /// <summary>The failure that halted this instance, when it failed.</summary>
+    /// <summary>
+    /// The failure that halted this instance, when it failed.
+    /// </summary>
+    /// <remarks>
+    /// The step's own exception, unwrapped. Wrapping would force callers to
+    /// unwrap before matching on the failure, and would bury the stack trace an
+    /// operator needs to diagnose it.
+    /// </remarks>
     public Exception? Error { get; internal set; }
+
+    /// <summary>
+    /// Name of the step that failed, or <see langword="null"/> if none has.
+    /// </summary>
+    /// <remarks>
+    /// Recorded separately from <see cref="CurrentStepName"/> so that the
+    /// failure point survives once execution position moves on - which it will
+    /// once retries (#37) and compensation (#38) exist.
+    /// </remarks>
+    public string? FailedStepName { get; internal set; }
 
     /// <summary>
     /// Whether this instance has reached a state from which it will not
