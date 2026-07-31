@@ -1,11 +1,13 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/backend/">
+    <Project Path="src/backend/FlowDeck.Api/FlowDeck.Api.csproj" />
     <Project Path="src/backend/FlowDeck.Core/FlowDeck.Core.csproj" />
     <Project Path="src/backend/FlowDeck.Persistence.EntityFrameworkCore/FlowDeck.Persistence.EntityFrameworkCore.csproj" />
   </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/backend/">
+    <Project Path="tests/backend/FlowDeck.Api.Tests/FlowDeck.Api.Tests.csproj" />
     <Project Path="tests/backend/FlowDeck.Core.Tests/FlowDeck.Core.Tests.csproj" />
   </Folder>
 </Solution>
