@@ -179,3 +179,74 @@ h2 {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------------- cancellation */
+
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cancel-button,
+.confirm-actions button {
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cancel-button:hover:not(:disabled),
+.confirm-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+/*
+  A disabled control must still be legible. Fading it to the point of being
+  unreadable fails contrast for exactly the users who most need to read it.
+*/
+.cancel-button:disabled,
+.confirm-actions button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.cancel-button:focus-visible,
+.confirm-actions button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.confirm {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--status-suspended);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--status-suspended) 8%, transparent);
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.confirm-detail {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.cancel-error {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+}
