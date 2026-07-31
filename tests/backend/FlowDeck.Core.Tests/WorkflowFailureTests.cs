@@ -9,13 +9,13 @@ namespace FlowDeck.Core.Tests;
 /// </summary>
 public class WorkflowFailureTests
 {
-    private sealed class ThrowingStep(Exception toThrow) : IStepBody
+    private sealed class ThrowingStep(Exception toThrow) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             throw toThrow;
     }
 
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);

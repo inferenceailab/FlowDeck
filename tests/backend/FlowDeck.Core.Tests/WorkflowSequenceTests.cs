@@ -15,7 +15,7 @@ public class WorkflowSequenceTests
     /// execution order. Durable execution history is #18; this is the smallest
     /// thing that constrains ordering without pre-empting that design.
     /// </summary>
-    private sealed class RecordingStep(string name, List<string> log, Outcome outcome = Outcome.Next) : IStepBody
+    private sealed class RecordingStep(string name, List<string> log, Outcome outcome = Outcome.Next) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -24,7 +24,7 @@ public class WorkflowSequenceTests
         }
     }
 
-    private sealed class ThrowingStep(string name, List<string> log) : IStepBody
+    private sealed class ThrowingStep(string name, List<string> log) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -34,7 +34,7 @@ public class WorkflowSequenceTests
     }
 
     /// <summary>A definition assembled from an explicit list of named bodies.</summary>
-    private sealed class ComposedWorkflow(params (string Name, IStepBody Body)[] steps) : IWorkflowDefinition
+    private sealed class ComposedWorkflow(params (string Name, IStep Body)[] steps) : IWorkflowDefinition
     {
         public string Id => "composed";
 
@@ -104,7 +104,7 @@ public class WorkflowSequenceTests
         var log = new List<string>();
         var engine = EngineFor(new ComposedWorkflow(
             ("A", new RecordingStep("A", log)),
-            ("B", new RecordingStep("B", log, Outcome.Persist)),
+            ("B", new RecordingStep("B", log, Outcome.Suspend)),
             ("C", new RecordingStep("C", log))));
 
         var instance = await engine.StartAsync("composed", 1);
@@ -145,7 +145,7 @@ public class WorkflowSequenceTests
         Assert.Equal(["A", "B"], seen);
     }
 
-    private sealed class ContextCapturingStep(List<string> seen) : IStepBody
+    private sealed class ContextCapturingStep(List<string> seen) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -168,7 +168,7 @@ public class WorkflowSequenceTests
         Assert.All(ids, id => Assert.Equal(instance.Id, id));
     }
 
-    private sealed class InstanceIdCapturingStep(List<Guid> ids) : IStepBody
+    private sealed class InstanceIdCapturingStep(List<Guid> ids) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {

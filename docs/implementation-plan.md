@@ -43,7 +43,7 @@ phase.
 | Issue | Story | Outcome |
 | --- | --- | --- |
 | #1 | Definition with stable identifier | `IWorkflowDefinition`, `WorkflowRegistry` |
-| #2 | Step as atomic unit of work | `IStepBody`, `Outcome`, `StepExecutor` |
+| #2 | Step as atomic unit of work | `IStep`, `Outcome`, `StepExecutor` |
 | #3 | Single-step workflow completes | `WorkflowEngine`, `WorkflowInstance` |
 | #4 | Steps in declared sequence | Tests only — loop already correct |
 | #5 | Data between steps | `IWorkflowData` |

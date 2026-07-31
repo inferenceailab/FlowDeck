@@ -9,7 +9,7 @@ namespace FlowDeck.Core.Tests;
 /// </summary>
 public class UnregisteredDefinitionTests
 {
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);
@@ -65,7 +65,7 @@ public class UnregisteredDefinitionTests
         public void Build(IWorkflowBuilder builder) => builder.AddStep("only", () => new SpyStep(onExecute));
     }
 
-    private sealed class SpyStep(Action onExecute) : IStepBody
+    private sealed class SpyStep(Action onExecute) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {

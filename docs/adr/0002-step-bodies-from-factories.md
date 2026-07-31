@@ -4,7 +4,7 @@
 
 ## Context
 
-A definition declares its steps. The engine needs an `IStepBody` to execute for
+A definition declares its steps. The engine needs an `IStep` to execute for
 each one. The simplest approach is for the definition to hand over a step
 instance directly.
 
@@ -14,8 +14,8 @@ instances of the same workflow share one body object, they share that state.
 
 ## Decision
 
-`IWorkflowBuilder.AddStep` takes a `Func<IStepBody>` rather than an
-`IStepBody`. The engine invokes the factory once per step execution.
+`IWorkflowBuilder.AddStep` takes a `Func<IStep>` rather than an
+`IStep`. The engine invokes the factory once per step execution.
 
 ## Consequences
 

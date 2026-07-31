@@ -13,7 +13,7 @@ public class StepExecutorTests
     private static IStepContext Context(string stepName = "A") =>
         new StepContext(Guid.NewGuid(), stepName);
 
-    private sealed class AdvancingStep : IStepBody
+    private sealed class AdvancingStep : IStep
     {
         public int Invocations { get; private set; }
 
@@ -24,13 +24,13 @@ public class StepExecutorTests
         }
     }
 
-    private sealed class SuspendingStep : IStepBody
+    private sealed class SuspendingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Outcome.Persist);
+            ValueTask.FromResult(Outcome.Suspend);
     }
 
-    private sealed class ThrowingStep : IStepBody
+    private sealed class ThrowingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("step blew up");
@@ -39,7 +39,7 @@ public class StepExecutorTests
     [Fact]
     public async Task Step_returning_Next_succeeds_and_advances()
     {
-        // Given a step implementing IStepBody that returns Outcome.Next
+        // Given a step implementing IStep that returns Outcome.Next
         var step = new AdvancingStep();
         var executor = new StepExecutor();
 
@@ -56,9 +56,9 @@ public class StepExecutorTests
     }
 
     [Fact]
-    public async Task Step_returning_Persist_succeeds_but_does_not_advance()
+    public async Task Step_returning_Suspend_succeeds_but_does_not_advance()
     {
-        // Given a step returning Outcome.Persist
+        // Given a step returning Outcome.Suspend
         var executor = new StepExecutor();
 
         // When the engine executes the step
@@ -69,7 +69,7 @@ public class StepExecutorTests
 
         // And the instance status is Suspended
         Assert.Equal(StepStatus.Success, result.Status);
-        Assert.Equal(Outcome.Persist, result.Outcome);
+        Assert.Equal(Outcome.Suspend, result.Outcome);
         Assert.Equal(InstanceStatus.Suspended, result.ResultingInstanceStatus);
     }
 

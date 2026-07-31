@@ -9,26 +9,26 @@ namespace FlowDeck.Core.Tests;
 /// </summary>
 public class InstanceQueryTests
 {
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);
     }
 
-    private sealed class SuspendingStep : IStepBody
+    private sealed class SuspendingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Outcome.Persist);
+            ValueTask.FromResult(Outcome.Suspend);
     }
 
-    private sealed class ThrowingStep : IStepBody
+    private sealed class ThrowingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("boom");
     }
 
     /// <summary>A → B → C, where B's behaviour is supplied by the test.</summary>
-    private sealed class ThreeStep(Func<IStepBody> middle) : IWorkflowDefinition
+    private sealed class ThreeStep(Func<IStep> middle) : IWorkflowDefinition
     {
         public string Id => "three-step";
 

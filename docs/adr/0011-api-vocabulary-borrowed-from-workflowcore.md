@@ -1,6 +1,6 @@
 # ADR-0011: API vocabulary borrowed from WorkflowCore
 
-**Status:** Accepted, pending review · **Milestone:** M1 · **Issues:** #2, #3
+**Status:** Accepted (open question resolved by [ADR-0012](0012-step-vocabulary-rename.md)) · **Milestone:** M1 · **Issues:** #2, #3
 
 ## Context
 
@@ -19,9 +19,9 @@ because the result looks similar either way.
 
 | FlowDeck | WorkflowCore | Overlap |
 | --- | --- | --- |
-| `IStepBody` | `IStepBody` | **Name identical.** Method differs: `ValueTask<Outcome> ExecuteAsync(IStepContext, CancellationToken)` vs `ExecutionResult Run(IStepExecutionContext)`. |
+| `IStep` | `IStep` | **Name identical.** Method differs: `ValueTask<Outcome> ExecuteAsync(IStepContext, CancellationToken)` vs `ExecutionResult Run(IStepExecutionContext)`. |
 | `Outcome.Next` | `ExecutionResult.Next()` | **Concept and term identical.** Enum value vs factory method. |
-| `Outcome.Persist` | `ExecutionResult.Persist(...)` | **Concept and term identical.** |
+| `Outcome.Persist` (now `Suspend`) | `ExecutionResult.Persist(...)` | **Concept and term identical.** |
 | `IWorkflowBuilder` | `IWorkflowBuilder<TData>` | **Name identical**, shape differs. |
 | `IStepContext` | `IStepExecutionContext` | Near-identical name, different members. |
 | `IWorkflowDefinition` | `IWorkflow` | **Same shape**: `string Id`, `int Version`, `void Build(builder)`. Different name. |
@@ -81,21 +81,15 @@ on its own terms.
 **Claim independent derivation.** It would not be true. The names came from
 familiarity with WorkflowCore.
 
-## Open question
+## Open question — resolved
 
-Should the verbatim names be changed? Candidate rename, on clarity grounds
-rather than differentiation:
+The naming question this ADR left open was decided in
+[ADR-0012](0012-step-vocabulary-rename.md): `IStepBody` became `IStep`,
+`WorkflowStep` became `StepDeclaration`, and `Outcome.Persist` became
+`Outcome.Suspend` — on clarity grounds, not differentiation.
 
-| Current | Candidate | Rationale |
-| --- | --- | --- |
-| `IStepBody` | `IStep` | "Body" is only meaningful relative to a step *declaration*; `IStep` says what it is. |
-| `WorkflowStep` (record) | `StepDeclaration` | Frees `IStep`, and describes what it actually is — the declaration, not the work. |
-| `Outcome.Persist` | `Outcome.Suspend` | Matches `InstanceStatus.Suspended`, which is what it produces. "Persist" describes an implementation detail that is not even implemented yet. |
-| `Outcome.Next` | `Outcome.Continue` | Minor. `Next` is fine. |
-
-`Outcome.Persist` → `Suspend` is the strongest case on merit alone: the value is
-named after persistence the engine does not currently perform, while the state
-it produces is called `Suspended`. That inconsistency is a real defect
-independent of provenance.
-
-Pending a decision from the repository owner.
+The remaining convergences recorded above are **unchanged and still stand**, in
+particular `IWorkflowDefinition` having the same shape as WorkflowCore's
+`IWorkflow`. Renaming removed one verbatim collision; it did not make FlowDeck
+an independent derivation, and this record exists so nobody later believes it
+did.

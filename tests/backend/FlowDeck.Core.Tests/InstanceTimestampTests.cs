@@ -14,7 +14,7 @@ public class InstanceTimestampTests
 
     /// <summary>Advances the shared clock, so execution appears to take time.</summary>
     private sealed class SlowStep(TestTimeProvider clock, TimeSpan duration, Outcome outcome = Outcome.Next)
-        : IStepBody
+        : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -23,7 +23,7 @@ public class InstanceTimestampTests
         }
     }
 
-    private sealed class ThrowingStep(TestTimeProvider clock, TimeSpan duration) : IStepBody
+    private sealed class ThrowingStep(TestTimeProvider clock, TimeSpan duration) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -32,7 +32,7 @@ public class InstanceTimestampTests
         }
     }
 
-    private sealed class OneStep(Func<IStepBody> factory) : IWorkflowDefinition
+    private sealed class OneStep(Func<IStep> factory) : IWorkflowDefinition
     {
         public string Id => "timed";
 
@@ -74,7 +74,7 @@ public class InstanceTimestampTests
         // Given a suspended instance
         var clock = new TestTimeProvider(Start);
         var engine = EngineFor(
-            new OneStep(() => new SlowStep(clock, TimeSpan.FromSeconds(3), Outcome.Persist)), clock);
+            new OneStep(() => new SlowStep(clock, TimeSpan.FromSeconds(3), Outcome.Suspend)), clock);
 
         var instance = await engine.StartAsync("timed", 1);
 
