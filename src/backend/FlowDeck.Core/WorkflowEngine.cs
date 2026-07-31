@@ -93,6 +93,7 @@ public sealed class WorkflowEngine
             {
                 instance.Status = InstanceStatus.Failed;
                 instance.Error = result.Error;
+                instance.FailedStepName = result.StepName;
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
                 return;
             }
