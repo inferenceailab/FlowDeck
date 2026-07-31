@@ -2,14 +2,19 @@
 
 ## Reporting a Vulnerability
 
-This is a private repository. Report suspected vulnerabilities directly to the
-repository owner rather than opening a public issue. Please include:
+**Do not open a public issue for a security vulnerability.**
+
+Use GitHub's [private vulnerability reporting][pvr] — the **Report a
+vulnerability** button under the Security tab. It is enabled on this
+repository. Please include:
 
 - affected component and version / commit SHA
 - reproduction steps or proof of concept
 - assessed impact
 
 Expect an acknowledgement within 5 business days.
+
+[pvr]: https://github.com/inferenceailab/FlowDeck/security/advisories/new
 
 ## Supported Versions
 
@@ -28,8 +33,26 @@ Only the default branch (`main`) receives security fixes.
 | Allowed Actions | GitHub-owned and verified creators only |
 | Actions must be SHA-pinned | required |
 | Web commit sign-off | required |
-| Signed commits | all commits signed with SSH key, verified by GitHub |
+| Signed commits | required on `main`, no bypass |
+| Secret scanning | enabled |
+| Secret scanning push protection | enabled |
+| Private vulnerability reporting | enabled |
+| Code scanning (CodeQL) | default setup configured |
+| Force-push to `main` | **blocked, no bypass** |
+| Deletion of `main` | **blocked, no bypass** |
+| Linear history on `main` | required, no bypass |
+| Pull request before merge | required (repo admin may bypass) |
 | Local secret scanning | `gitleaks` pre-commit hook (`.githooks/pre-commit`) |
+
+Two rulesets protect `main`, deliberately split:
+
+- **`main-protection`** — deletion, force-push, non-linear history and unsigned
+  commits are refused **for everyone, including repository admins**. There is no
+  bypass actor, so destroying history requires consciously disabling the
+  ruleset first.
+- **`main-pull-request`** — requires a pull request with one approving review,
+  but repo admins may bypass. Without this split, a solo maintainer could never
+  merge anything, since you cannot approve your own pull request.
 
 ## Setting Up a Clone
 
@@ -51,20 +74,14 @@ Note: the default gitleaks ruleset does **not** flag a bare AWS access key ID
 custom rules in `.gitleaks.toml` if the project starts handling AWS
 credentials.
 
-## Not Currently Available
+## Known Gaps
 
-These controls are unavailable while this repository is **private on a free
-personal plan**. Making it public, or upgrading to GitHub Pro, enables them.
-
-| Control | Blocked by |
+| Gap | Detail |
 | --- | --- |
-| Branch protection / rulesets on `main` | needs GitHub Pro, or public |
-| Required pull request and review before merge | needs GitHub Pro, or public |
-| Blocking force-push and branch deletion | needs GitHub Pro, or public |
-| Required signed commits | needs GitHub Pro, or public |
-| Code scanning (CodeQL) | needs GitHub Code Security, or public |
-| Secret scanning and push protection | needs GitHub Secret Protection, or public |
-| Private vulnerability reporting | public repositories only |
+| CodeQL analyses no languages yet | Default setup is configured but detected `languages: []` — there is no application code in the repository yet. Re-check once the first real source lands. |
+| Secret scanning non-provider patterns | Reported `disabled`; the API accepts the change but does not apply it. Toggle under Settings → Code security if wanted. |
+| Secret scanning validity checks | Same as above. |
+| gitleaks AWS coverage | The default ruleset does not flag a bare AWS access key ID. |
 
 ## Dependency Hygiene
 
