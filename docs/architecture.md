@@ -182,7 +182,8 @@ graph LR
 
 **The conformance suite is the provider contract.** `IWorkflowStore` is only its
 signature. It runs against three configurations — in-memory, in-memory with
-serialisation, and EF Core on SQLite — and has already caught a SQLite
+serialisation, and EF Core on SQLite — plus opt-in runs against PostgreSQL and
+SQL Server. It has already caught a SQLite
 `ORDER BY` incompatibility that reading the code would not have.
 
 ### Recovery
@@ -206,7 +207,7 @@ none.
 | Limitation | Consequence | Tracked by |
 | --- | --- | --- |
 | A crashed instance is stuck in `Running` | No sweep returns it to `Suspended`, so nothing resumes it | #39 |
-| EF Core is verified against SQLite only | PostgreSQL concurrency, query plans and index use are unverified | #78 |
+| PostgreSQL and SQL Server conformance runs have never been executed | Both are supported by design and unverified in practice; the suites exist and skip | #78 |
 | Resume requires the definition registered on the recovering host | An unknown definition cannot be resumed | #67 |
 | No retry | Any step failure is terminal | #37 |
 | No compensation | Partial work is not undone on failure | #38 |

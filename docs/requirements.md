@@ -116,6 +116,30 @@ arrived as a side effect of #12 with no story, no HTTP endpoint and no dashboard
 exposure. A suspended workflow is currently only completable from inside the
 process that started it.
 
+### FR-5a — Supported databases
+
+FlowDeck's EF Core provider depends only on `EntityFrameworkCore.Relational`,
+so the host selects its database with the usual `UseX` call. No FlowDeck package
+is needed per database.
+
+| Database | Status | Verified by |
+| --- | --- | --- |
+| SQLite | ✅ supported | conformance suite, runs by default |
+| PostgreSQL | ✅ supported | conformance suite, opt-in via `FLOWDECK_POSTGRES` |
+| SQL Server | ✅ supported | conformance suite, opt-in via `FLOWDECK_SQLSERVER` |
+| Others (MySQL, Oracle …) | should work | **unverified** — add a subclass to find out |
+
+"Supported" means **the conformance suite passes against it**, not that the code
+compiles. Anything in the last row is a design claim only.
+
+Per-database notes that are tuning rather than correctness:
+
+- **SQL Server** clusters the primary key by default, and instance ids are
+  random `Guid`s. At volume that causes page splits and index fragmentation.
+  A host that cares should make the PK non-clustered or use sequential ids.
+- **PostgreSQL** stores `DataJson` as `text`. A host wanting to query inside
+  workflow data would map it to `jsonb`, which FlowDeck does not require.
+
 ### FR-6 — Definition versioning
 
 | ID | Requirement | Milestone |
