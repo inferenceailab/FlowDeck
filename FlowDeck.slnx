@@ -2,6 +2,7 @@
   <Folder Name="/src/" />
   <Folder Name="/src/backend/">
     <Project Path="src/backend/FlowDeck.Core/FlowDeck.Core.csproj" />
+    <Project Path="src/backend/FlowDeck.Persistence.EntityFrameworkCore/FlowDeck.Persistence.EntityFrameworkCore.csproj" />
   </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/backend/">
