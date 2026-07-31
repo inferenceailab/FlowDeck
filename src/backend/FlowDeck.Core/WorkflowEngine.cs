@@ -119,7 +119,7 @@ public sealed class WorkflowEngine
     /// exactly what #13 and #14 exist to fix; this is enough to make suspension
     /// meaningful within one process.
     /// </remarks>
-    private sealed record RuntimeState(IReadOnlyList<WorkflowStep> Steps, IWorkflowData Data, object? Input);
+    private sealed record RuntimeState(IReadOnlyList<StepDeclaration> Steps, IWorkflowData Data, object? Input);
 
     /// <summary>
     /// Starts a new instance of a definition and runs it until it completes,
@@ -218,7 +218,7 @@ public sealed class WorkflowEngine
     /// <summary>
     /// Compiles a definition into its ordered step list.
     /// </summary>
-    private static IReadOnlyList<WorkflowStep> Compile(IWorkflowDefinition definition)
+    private static IReadOnlyList<StepDeclaration> Compile(IWorkflowDefinition definition)
     {
         var builder = new WorkflowBuilder(definition.Id);
         definition.Build(builder);
@@ -230,7 +230,7 @@ public sealed class WorkflowEngine
     /// </summary>
     private async Task RunAsync(
         WorkflowInstance instance,
-        IReadOnlyList<WorkflowStep> steps,
+        IReadOnlyList<StepDeclaration> steps,
         IWorkflowData data,
         object? input,
         CancellationToken cancellationToken)
@@ -244,7 +244,7 @@ public sealed class WorkflowEngine
 
             var context = new StepContext(instance.Id, step.Name, data, input);
             var result = await this.executor
-                .ExecuteAsync(step.BodyFactory(), context, cancellationToken)
+                .ExecuteAsync(step.Factory(), context, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Status == StepStatus.Failed)

@@ -12,25 +12,25 @@ public class InstanceCancellationTests
 {
     private static readonly DateTimeOffset Start = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
 
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);
     }
 
-    private sealed class SuspendingStep : IStepBody
+    private sealed class SuspendingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Outcome.Persist);
+            ValueTask.FromResult(Outcome.Suspend);
     }
 
-    private sealed class ThrowingStep : IStepBody
+    private sealed class ThrowingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("boom");
     }
 
-    private sealed class TwoStep(Func<IStepBody> first) : IWorkflowDefinition
+    private sealed class TwoStep(Func<IStep> first) : IWorkflowDefinition
     {
         public string Id => "cancellable";
 
@@ -43,7 +43,7 @@ public class InstanceCancellationTests
         }
     }
 
-    private static WorkflowEngine EngineFor(Func<IStepBody> first, TimeProvider? clock = null)
+    private static WorkflowEngine EngineFor(Func<IStep> first, TimeProvider? clock = null)
     {
         var registry = new WorkflowRegistry();
         registry.Register(new TwoStep(first));
@@ -194,7 +194,7 @@ public class InstanceCancellationTests
         }
     }
 
-    private sealed class SuspendOnceStep(List<string> executed) : IStepBody
+    private sealed class SuspendOnceStep(List<string> executed) : IStep
     {
         private static readonly HashSet<Guid> Seen = [];
 
@@ -204,7 +204,7 @@ public class InstanceCancellationTests
             {
                 if (Seen.Add(context.InstanceId))
                 {
-                    return ValueTask.FromResult(Outcome.Persist);
+                    return ValueTask.FromResult(Outcome.Suspend);
                 }
             }
 
@@ -213,7 +213,7 @@ public class InstanceCancellationTests
         }
     }
 
-    private sealed class RecordingStep(string name, List<string> executed) : IStepBody
+    private sealed class RecordingStep(string name, List<string> executed) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {

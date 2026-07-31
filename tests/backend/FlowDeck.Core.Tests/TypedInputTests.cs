@@ -14,7 +14,7 @@ public class TypedInputTests
 
     public sealed record ShipmentRequest(string Tracking);
 
-    private sealed class ReadsInput(List<int> seen) : IStepBody
+    private sealed class ReadsInput(List<int> seen) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -23,7 +23,7 @@ public class TypedInputTests
         }
     }
 
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);
@@ -182,7 +182,7 @@ public class TypedInputTests
         public void Build(IWorkflowBuilder builder) => builder.AddStep("only", () => new WrongTypeStep());
     }
 
-    private sealed class WrongTypeStep : IStepBody
+    private sealed class WrongTypeStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {

@@ -10,7 +10,7 @@ namespace FlowDeck.Core.Tests;
 /// </summary>
 public class WorkflowDataTests
 {
-    private sealed class WritesOrderId(int value) : IStepBody
+    private sealed class WritesOrderId(int value) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -19,7 +19,7 @@ public class WorkflowDataTests
         }
     }
 
-    private sealed class ReadsOrderId(List<int> seen) : IStepBody
+    private sealed class ReadsOrderId(List<int> seen) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -28,7 +28,7 @@ public class WorkflowDataTests
         }
     }
 
-    private sealed class TwoStepWorkflow(IStepBody first, IStepBody second) : IWorkflowDefinition
+    private sealed class TwoStepWorkflow(IStep first, IStep second) : IWorkflowDefinition
     {
         public string Id => "data-flow";
 
@@ -104,7 +104,7 @@ public class WorkflowDataTests
         }
     }
 
-    private sealed class WriteInstanceId : IStepBody
+    private sealed class WriteInstanceId : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
@@ -113,7 +113,7 @@ public class WorkflowDataTests
         }
     }
 
-    private sealed class VerifyInstanceId : IStepBody
+    private sealed class VerifyInstanceId : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {

@@ -9,7 +9,7 @@ namespace FlowDeck.Core.Tests;
 /// </summary>
 public class InstanceIdentityTests
 {
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);
@@ -108,7 +108,7 @@ public class InstanceIdentityTests
         }
     }
 
-    private sealed class IdCapturingStep(List<Guid> seen) : IStepBody
+    private sealed class IdCapturingStep(List<Guid> seen) : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {

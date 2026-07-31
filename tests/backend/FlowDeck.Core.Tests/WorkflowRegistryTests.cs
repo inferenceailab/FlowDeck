@@ -32,7 +32,7 @@ public class WorkflowRegistryTests
         public void Build(IWorkflowBuilder builder) => builder.AddStep("noop", () => new NoopStep());
     }
 
-    private sealed class NoopStep : IStepBody
+    private sealed class NoopStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Outcome.Next);

@@ -24,7 +24,7 @@ graph TB
 
     subgraph author["Author code"]
         DEFS["IWorkflowDefinition"]
-        STEPS["IStepBody"]
+        STEPS["IStep"]
     end
 
     DB[("Persistence<br/><i>M2 - planned</i>")]
@@ -47,7 +47,7 @@ graph TB
 | `IWorkflowDefinition` | Declares a workflow's identity and steps | ✅ M1 |
 | `IWorkflowBuilder` | Collects declared steps in order | ✅ M1 |
 | `WorkflowRegistry` | Resolves a definition by (id, version) | ✅ M1 |
-| `IStepBody` | One unit of author-written work | ✅ M1 |
+| `IStep` | One unit of author-written work | ✅ M1 |
 | `StepExecutor` | Runs one step; trust boundary | ✅ M1 |
 | `WorkflowEngine` | Drives an instance through its steps | ✅ M1 |
 | `WorkflowInstance` | State of one execution | ✅ M1 |
@@ -67,7 +67,7 @@ stateDiagram-v2
     [*] --> Running: StartAsync
     Running --> Running: Outcome.Next<br/>(more steps remain)
     Running --> Completed: Outcome.Next<br/>(no steps remain)
-    Running --> Suspended: Outcome.Persist
+    Running --> Suspended: Outcome.Suspend
     Running --> Failed: step throws
     Suspended --> Running: ResumeAsync
     Suspended --> Cancelled: Cancel
@@ -122,7 +122,7 @@ graph LR
         EXEC["StepExecutor"]
     end
     subgraph untrusted["Author code - untrusted"]
-        BODY["IStepBody.ExecuteAsync"]
+        BODY["IStep.ExecuteAsync"]
     end
 
     LOOP --> EXEC

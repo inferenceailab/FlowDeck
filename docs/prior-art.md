@@ -14,7 +14,7 @@ What *was* taken is at the level of ideas and, in two places, vocabulary:
 
 | Borrowed | From | Kind |
 | --- | --- | --- |
-| `IStepBody` as the name for a unit of work | WorkflowCore | **Naming** |
+| `IStep` as the name for a unit of work | WorkflowCore | **Naming** |
 | `Next` / `Persist` as step outcomes | WorkflowCore | **Naming + concept** |
 | Definition identity includes a version | Elsa v3, WorkflowCore | Concept |
 | Suspend-and-resume as a first-class outcome | Elsa v3 (bookmarks) | Concept |
@@ -39,7 +39,7 @@ WorkflowCore's public API vocabulary. See
 | Aspect | WorkflowCore | FlowDeck | Why |
 | --- | --- | --- | --- |
 | Flow shape | Branching, parallel, `While`, `If` | **Strictly linear** | M1 scope. Branching is not designed yet and pretending otherwise in the API would be dishonest. |
-| Step construction | Resolved from a DI container | **`Func<IStepBody>` factory** | Core stays container-agnostic. A factory can be backed by a container without changing the interface. See [ADR-0002](adr/0002-step-bodies-from-factories.md). |
+| Step construction | Resolved from a DI container | **`Func<IStep>` factory** | Core stays container-agnostic. A factory can be backed by a container without changing the interface. See [ADR-0002](adr/0002-step-bodies-from-factories.md). |
 | Data flow | `Input()`/`Output()` mapping expressions | **Keyed data bag with checked reads** | Expression mapping is powerful and adds a second language to learn. Checked reads name the key and both types on mismatch. See [ADR-0005](adr/0005-workflow-data-is-checked-not-cast.md). |
 | Builder | Generic fluent `Then<TStep>()` | **`AddStep(name, factory)`** | Step names are part of the contract: they appear in history, errors and dashboards. Naming them explicitly makes that visible. |
 | Outcome model | `ExecutionResult` object with branching values | **Flat `Outcome` enum** | Two outcomes are all a linear engine can act on. The enum grows when branching does. |
@@ -61,7 +61,7 @@ WorkflowCore's public API vocabulary. See
 | Authoring | Designer-first, JSON definitions | **C# only** | The brief specifies steps implemented directly in C# initially. A designer is M7 and may start read-only. |
 | Expressions | JavaScript / Liquid expression engine | **None** | Adding an expression language means a second execution model, a sandbox and a security surface. Not warranted for C#-authored workflows. |
 | Flow shape | Arbitrary activity graph | **Linear list** | As above. |
-| Suspension | Bookmarks with typed resume payloads | **`Outcome.Persist`, resume re-enters the same step** | Simpler and sufficient. A typed resume payload has no story requiring it yet. |
+| Suspension | Bookmarks with typed resume payloads | **`Outcome.Suspend`, resume re-enters the same step** | Simpler and sufficient. A typed resume payload has no story requiring it yet. |
 | Versioning | Definition versions with published/draft states | **`(Id, Version)` composite key, no lifecycle states** | Draft/published is an authoring-tool concern, which FlowDeck does not yet have. |
 
 ### vs. Temporal

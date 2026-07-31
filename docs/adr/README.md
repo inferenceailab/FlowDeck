@@ -37,4 +37,5 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0008](0008-terminal-states-are-final.md) | Terminal states are final | Accepted | M1 |
 | [0009](0009-in-memory-store-is-temporary.md) | The in-memory store is temporary | Accepted | M1 |
 | [0010](0010-minimise-third-party-dependencies.md) | Minimise third-party dependencies | Accepted | Phase 2 |
-| [0011](0011-api-vocabulary-borrowed-from-workflowcore.md) | API vocabulary borrowed from WorkflowCore | Accepted, pending review | M1 |
+| [0011](0011-api-vocabulary-borrowed-from-workflowcore.md) | API vocabulary borrowed from WorkflowCore | Accepted | M1 |
+| [0012](0012-step-vocabulary-rename.md) | Rename the step vocabulary for clarity | Accepted | M1 |

@@ -11,10 +11,14 @@ public enum Outcome
     Next = 0,
 
     /// <summary>
-    /// The step has not finished. Persist the instance and suspend it; it will
-    /// be resumed later, typically by an external event or a timer.
+    /// The step has not finished. Suspend the instance here; it will be resumed
+    /// later, typically by an external event or a timer.
     /// </summary>
-    Persist = 1,
+    /// <remarks>
+    /// The instance stays positioned on this step, so resuming re-enters it
+    /// rather than skipping ahead.
+    /// </remarks>
+    Suspend = 1,
 }
 
 /// <summary>
@@ -53,13 +57,13 @@ public interface IStepContext
 /// engine: a thrown exception is captured as a failed result rather than
 /// being allowed to unwind the execution loop.
 /// </remarks>
-public interface IStepBody
+public interface IStep
 {
     /// <summary>
     /// Performs this step's work.
     /// </summary>
     /// <returns>
-    /// <see cref="Outcome.Next"/> to advance, <see cref="Outcome.Persist"/> to
+    /// <see cref="Outcome.Next"/> to advance, <see cref="Outcome.Suspend"/> to
     /// suspend at this step.
     /// </returns>
     ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default);

@@ -64,7 +64,7 @@ public sealed record StepExecutionResult(
     public InstanceStatus ResultingInstanceStatus => this.Status switch
     {
         StepStatus.Failed => InstanceStatus.Failed,
-        _ when this.Outcome == Outcome.Persist => InstanceStatus.Suspended,
+        _ when this.Outcome == Outcome.Suspend => InstanceStatus.Suspended,
         _ => InstanceStatus.Running,
     };
 }
@@ -81,7 +81,7 @@ public sealed record StepExecutionResult(
 public sealed class StepExecutor
 {
     public async ValueTask<StepExecutionResult> ExecuteAsync(
-        IStepBody step,
+        IStep step,
         IStepContext context,
         CancellationToken cancellationToken = default)
     {

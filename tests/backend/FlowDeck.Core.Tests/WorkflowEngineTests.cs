@@ -13,7 +13,7 @@ public class WorkflowEngineTests
     /// Counts executions across all instances of the step, so a test can prove
     /// a step ran exactly once rather than merely that it ran.
     /// </summary>
-    private sealed class CountingStep : IStepBody
+    private sealed class CountingStep : IStep
     {
         private int invocations;
 
@@ -26,14 +26,14 @@ public class WorkflowEngineTests
         }
     }
 
-    private sealed class SuspendingStep : IStepBody
+    private sealed class SuspendingStep : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Outcome.Persist);
+            ValueTask.FromResult(Outcome.Suspend);
     }
 
     /// <summary>A definition of exactly one step, backed by a supplied body.</summary>
-    private sealed class SingleStepWorkflow(IStepBody body) : IWorkflowDefinition
+    private sealed class SingleStepWorkflow(IStep body) : IWorkflowDefinition
     {
         public string Id => "single-step";
 
@@ -82,7 +82,7 @@ public class WorkflowEngineTests
     public async Task Suspending_step_leaves_the_instance_suspended_not_completed()
     {
         // A workflow that parks must not be reported as finished - the whole
-        // point of Persist is that there is more to do later.
+        // point of Suspend is that there is more to do later.
         var engine = EngineFor(new SingleStepWorkflow(new SuspendingStep()));
 
         var instance = await engine.StartAsync("single-step", 1);

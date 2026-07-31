@@ -26,7 +26,7 @@ public class DocumentationExampleTests
             builder.AddStep("say-hello", () => new SayHello());
     }
 
-    public sealed class SayHello : IStepBody
+    public sealed class SayHello : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(
             IStepContext context,
@@ -48,13 +48,13 @@ public class DocumentationExampleTests
 
     // --- "Step outcomes" -----------------------------------------------------
 
-    public sealed class WaitForApproval : IStepBody
+    public sealed class WaitForApproval : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
         {
             if (!context.Data.TryGet<bool>("approved", out var approved) || !approved)
             {
-                return ValueTask.FromResult(Outcome.Persist);
+                return ValueTask.FromResult(Outcome.Suspend);
             }
 
             return ValueTask.FromResult(Outcome.Next);
@@ -120,7 +120,7 @@ public class DocumentationExampleTests
             builder.AddStep("charge", () => new ChargeCard());
     }
 
-    public sealed class ChargeCard : IStepBody
+    public sealed class ChargeCard : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
         {
@@ -183,7 +183,7 @@ public class DocumentationExampleTests
             builder.AddStep("charge", () => new AlwaysThrows());
     }
 
-    private sealed class AlwaysThrows : IStepBody
+    private sealed class AlwaysThrows : IStep
     {
         public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct) =>
             throw new InvalidOperationException("card declined");

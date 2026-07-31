@@ -25,7 +25,7 @@ public sealed class GreetWorkflow : IWorkflowDefinition
         builder.AddStep("say-hello", () => new SayHello());
 }
 
-public sealed class SayHello : IStepBody
+public sealed class SayHello : IStep
 {
     public ValueTask<Outcome> ExecuteAsync(
         IStepContext context,
@@ -56,19 +56,19 @@ A step returns an `Outcome` telling the engine what to do next.
 | Outcome | Effect |
 | --- | --- |
 | `Outcome.Next` | Step is done. Advance to the next step. |
-| `Outcome.Persist` | Step is not done. Suspend here; resume later. |
+| `Outcome.Suspend` | Step is not done. Suspend here; resume later. |
 
 A suspended instance stays positioned **on** the suspending step.
 `ResumeAsync` re-enters that same step — it does not skip ahead.
 
 ```csharp
-public sealed class WaitForApproval : IStepBody
+public sealed class WaitForApproval : IStep
 {
     public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
     {
         if (!context.Data.TryGet<bool>("approved", out var approved) || !approved)
         {
-            return ValueTask.FromResult(Outcome.Persist);   // park here
+            return ValueTask.FromResult(Outcome.Suspend);   // park here
         }
 
         return ValueTask.FromResult(Outcome.Next);
@@ -120,7 +120,7 @@ public sealed class FulfilOrder : IWorkflowDefinition<OrderRequest>
         builder.AddStep("charge", () => new ChargeCard());
 }
 
-public sealed class ChargeCard : IStepBody
+public sealed class ChargeCard : IStep
 {
     public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
     {
