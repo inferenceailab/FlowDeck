@@ -59,11 +59,11 @@ public class InstanceCancellationTests
         Assert.Equal(InstanceStatus.Suspended, started.Status);
 
         // When I cancel it
-        var cancelled = engine.Cancel(started.Id);
+        var cancelled = await engine.CancelAsync(started.Id);
 
         // Then the instance status becomes Cancelled
         Assert.Equal(InstanceStatus.Cancelled, cancelled.Status);
-        Assert.Equal(InstanceStatus.Cancelled, engine.GetInstance(started.Id).Status);
+        Assert.Equal(InstanceStatus.Cancelled, (await engine.GetInstanceAsync(started.Id)).Status);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class InstanceCancellationTests
         var engine = EngineFor(() => new SuspendingStep());
         var started = await engine.StartAsync("cancellable", 1);
 
-        engine.Cancel(started.Id);
+        await engine.CancelAsync(started.Id);
 
         await Assert.ThrowsAsync<InvalidStateTransitionException>(
             async () => await engine.ResumeAsync(started.Id));
@@ -90,7 +90,7 @@ public class InstanceCancellationTests
 
         // When I cancel it
         // Then the call fails with an InvalidStateTransitionException
-        var ex = Assert.Throws<InvalidStateTransitionException>(() => engine.Cancel(started.Id));
+        var ex = await Assert.ThrowsAsync<InvalidStateTransitionException>(async () => await engine.CancelAsync(started.Id));
 
         Assert.Equal(InstanceStatus.Completed, ex.From);
         Assert.Equal(InstanceStatus.Cancelled, ex.To);
@@ -105,7 +105,7 @@ public class InstanceCancellationTests
         var engine = EngineFor(() => new ThrowingStep());
         var started = await engine.StartAsync("cancellable", 1);
 
-        var ex = Assert.Throws<InvalidStateTransitionException>(() => engine.Cancel(started.Id));
+        var ex = await Assert.ThrowsAsync<InvalidStateTransitionException>(async () => await engine.CancelAsync(started.Id));
 
         Assert.Equal(InstanceStatus.Failed, ex.From);
     }
@@ -118,9 +118,9 @@ public class InstanceCancellationTests
         var engine = EngineFor(() => new SuspendingStep());
         var started = await engine.StartAsync("cancellable", 1);
 
-        engine.Cancel(started.Id);
+        await engine.CancelAsync(started.Id);
 
-        Assert.Throws<InvalidStateTransitionException>(() => engine.Cancel(started.Id));
+        await Assert.ThrowsAsync<InvalidStateTransitionException>(async () => await engine.CancelAsync(started.Id));
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class InstanceCancellationTests
         var started = await engine.StartAsync("cancellable", 1);
 
         clock.Advance(TimeSpan.FromMinutes(3));
-        var cancelled = engine.Cancel(started.Id);
+        var cancelled = await engine.CancelAsync(started.Id);
 
         Assert.True(cancelled.IsTerminal);
         Assert.Equal(Start.AddMinutes(3), cancelled.CompletedAt);
@@ -145,18 +145,18 @@ public class InstanceCancellationTests
         var engine = EngineFor(() => new SuspendingStep());
         var started = await engine.StartAsync("cancellable", 1);
 
-        var cancelled = engine.Cancel(started.Id);
+        var cancelled = await engine.CancelAsync(started.Id);
 
         Assert.Equal("A", cancelled.CurrentStepName);
     }
 
     [Fact]
-    public void Cancelling_an_unknown_instance_is_reported_clearly()
+    public async Task Cancelling_an_unknown_instance_is_reported_clearly()
     {
         var engine = new WorkflowEngine(new WorkflowRegistry());
         var unknown = Guid.NewGuid();
 
-        var ex = Assert.Throws<InstanceNotFoundException>(() => engine.Cancel(unknown));
+        var ex = await Assert.ThrowsAsync<InstanceNotFoundException>(async () => await engine.CancelAsync(unknown));
 
         Assert.Equal(unknown, ex.InstanceId);
     }

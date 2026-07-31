@@ -57,7 +57,7 @@ public class InstanceQueryTests
         var started = await engine.StartAsync("three-step", 1);
 
         // When I query the instance
-        var found = engine.GetInstance(started.Id);
+        var found = await engine.GetInstanceAsync(started.Id);
 
         // Then the status is Suspended
         Assert.Equal(InstanceStatus.Suspended, found.Status);
@@ -75,7 +75,7 @@ public class InstanceQueryTests
         var engine = EngineFor(new ThreeStep(() => new NoopStep()));
         var started = await engine.StartAsync("three-step", 1);
 
-        var found = engine.GetInstance(started.Id);
+        var found = await engine.GetInstanceAsync(started.Id);
 
         Assert.Equal(InstanceStatus.Completed, found.Status);
         Assert.Null(found.CurrentStepName);
@@ -87,42 +87,55 @@ public class InstanceQueryTests
         var engine = EngineFor(new ThreeStep(() => new ThrowingStep()));
         var started = await engine.StartAsync("three-step", 1);
 
-        var found = engine.GetInstance(started.Id);
+        var found = await engine.GetInstanceAsync(started.Id);
 
         Assert.Equal(InstanceStatus.Failed, found.Status);
         Assert.Equal("B", found.FailedStepName);
-        Assert.NotNull(found.Error);
+
+        // A queried instance has no live Error: an exception object is not
+        // storable, so only its type and message survive. The exception itself
+        // is on the instance StartAsync returned, in this process only.
+        Assert.Null(found.Error);
+        Assert.Equal("InvalidOperationException", found.ErrorType);
+        Assert.Equal("boom", found.ErrorMessage);
+        Assert.NotNull(started.Error);
     }
 
     [Fact]
-    public void Querying_an_unknown_instance_is_reported_clearly()
+    public async Task Querying_an_unknown_instance_is_reported_clearly()
     {
         var engine = new WorkflowEngine(new WorkflowRegistry());
         var unknown = Guid.NewGuid();
 
-        var ex = Assert.Throws<InstanceNotFoundException>(() => engine.GetInstance(unknown));
+        var ex = await Assert.ThrowsAsync<InstanceNotFoundException>(async () => await engine.GetInstanceAsync(unknown));
 
         Assert.Equal(unknown, ex.InstanceId);
     }
 
     [Fact]
-    public void TryGetInstance_reports_absence_without_throwing()
+    public async Task FindInstance_reports_absence_without_throwing()
     {
         var engine = new WorkflowEngine(new WorkflowRegistry());
 
-        Assert.False(engine.TryGetInstance(Guid.NewGuid(), out var instance));
-        Assert.Null(instance);
+        Assert.Null(await engine.FindInstanceAsync(Guid.NewGuid()));
     }
 
     [Fact]
-    public async Task The_queried_instance_is_the_one_that_was_started()
+    public async Task A_queried_instance_reflects_persisted_state_not_the_live_object()
     {
-        // Returning a copy would let a caller act on stale state while the
-        // engine advances the real one.
+        // Behaviour change from #13, superseding ADR-0007's "returns the live
+        // object". Once the store is the source of truth, a query must read it
+        // rather than hand back an in-process object - otherwise an engine in
+        // another process would answer differently from this one.
         var engine = EngineFor(new ThreeStep(() => new SuspendingStep()));
         var started = await engine.StartAsync("three-step", 1);
 
-        Assert.Same(started, engine.GetInstance(started.Id));
+        var queried = await engine.GetInstanceAsync(started.Id);
+
+        Assert.NotSame(started, queried);
+        Assert.Equal(started.Id, queried.Id);
+        Assert.Equal(started.Status, queried.Status);
+        Assert.Equal(started.CurrentStepName, queried.CurrentStepName);
     }
 
     [Fact]
@@ -135,7 +148,7 @@ public class InstanceQueryTests
         var first = await engine.StartAsync("three-step", 1);
         var second = await engine.StartAsync("three-step", 1);
 
-        var all = engine.GetInstances();
+        var all = await engine.ListInstancesAsync();
 
         Assert.Equal(2, all.Count);
         Assert.Contains(all, i => i.Id == first.Id);
@@ -151,7 +164,7 @@ public class InstanceQueryTests
         await Assert.ThrowsAsync<DefinitionNotFoundException>(
             async () => await engine.StartAsync("does-not-exist", 1));
 
-        Assert.Empty(engine.GetInstances());
+        Assert.Empty(await engine.ListInstancesAsync());
     }
 
     [Fact]
@@ -162,6 +175,6 @@ public class InstanceQueryTests
 
         await Task.WhenAll(Enumerable.Range(0, count).Select(_ => engine.StartAsync("three-step", 1)));
 
-        Assert.Equal(count, engine.GetInstances().Count);
+        Assert.Equal(count, (await engine.ListInstancesAsync()).Count);
     }
 }

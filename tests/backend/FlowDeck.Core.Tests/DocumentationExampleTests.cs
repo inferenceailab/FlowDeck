@@ -262,16 +262,18 @@ public class DocumentationExampleTests
 
         var started = await engine.StartAsync("approval", 1);
 
-        Assert.Same(started, engine.GetInstance(started.Id));
-        Assert.True(engine.TryGetInstance(started.Id, out _));
-        Assert.False(engine.TryGetInstance(Guid.NewGuid(), out _));
-        Assert.Single(engine.GetInstances());
+        // No longer Assert.Same: the store is the source of truth, so a query
+        // returns a projection of persisted state rather than the live object.
+        Assert.Equal(started.Id, (await engine.GetInstanceAsync(started.Id)).Id);
+        Assert.NotNull(await engine.FindInstanceAsync(started.Id));
+        Assert.Null(await engine.FindInstanceAsync(Guid.NewGuid()));
+        Assert.Single(await engine.ListInstancesAsync());
 
-        engine.Cancel(started.Id);
-        Assert.Equal(InstanceStatus.Cancelled, engine.GetInstance(started.Id).Status);
+        await engine.CancelAsync(started.Id);
+        Assert.Equal(InstanceStatus.Cancelled, (await engine.GetInstanceAsync(started.Id)).Status);
 
         // Terminal states are final
-        Assert.Throws<InvalidStateTransitionException>(() => engine.Cancel(started.Id));
+        await Assert.ThrowsAsync<InvalidStateTransitionException>(async () => await engine.CancelAsync(started.Id));
         await Assert.ThrowsAsync<InvalidStateTransitionException>(
             async () => await engine.ResumeAsync(started.Id));
     }
