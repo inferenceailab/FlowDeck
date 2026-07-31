@@ -56,7 +56,7 @@ public class WorkflowFailureTests
 
         // And the recorded error message contains "InvalidOperationException"
         Assert.NotNull(instance.Error);
-        Assert.Contains("InvalidOperationException", instance.Error!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("InvalidOperationException", instance.Error.ToString(), StringComparison.Ordinal);
         Assert.Equal("boom", instance.Error.Message);
 
         // And the failing step name is recorded

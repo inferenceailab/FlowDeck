@@ -131,7 +131,7 @@ public class ConcurrentModificationTests
 
         Assert.True(
             loser is WorkflowStoreConcurrencyException or InvalidStateTransitionException,
-            $"loser failed with an unexpected {loser!.GetType().Name}: {loser.Message}");
+            $"loser failed with an unexpected {loser.GetType().Name}: {loser.Message}");
 
         static async Task<Exception?> Attempt(Func<Task> action)
         {

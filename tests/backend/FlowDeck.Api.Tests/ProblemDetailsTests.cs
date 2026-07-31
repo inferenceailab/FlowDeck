@@ -77,9 +77,13 @@ public class ProblemDetailsTests
         {
             using var response = await act();
             var problem = await ProblemFor(response);
+            var actual = problem.GetProperty("type").GetString();
 
             Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-            Assert.Equal(expected, problem.GetProperty("type").GetString());
+
+            // The description is in the failure message, so a broken case names
+            // itself instead of reporting an anonymous string mismatch.
+            Assert.True(expected == actual, $"{description}: expected type {expected}, got {actual}");
         }
     }
 

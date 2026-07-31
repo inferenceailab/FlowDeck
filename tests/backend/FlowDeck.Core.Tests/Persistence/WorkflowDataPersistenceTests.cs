@@ -157,7 +157,7 @@ public class WorkflowDataPersistenceTests
         Assert.Equal(42, restored["int"]);
         Assert.IsType<int>(restored["int"]);
         Assert.Equal("acme", restored["string"]);
-        Assert.Equal(true, restored["bool"]);
+        Assert.True((bool)restored["bool"]!);
         Assert.Equal(12.34m, restored["decimal"]);
         Assert.Equal(original["guid"], restored["guid"]);
         Assert.Equal(original["when"], restored["when"]);

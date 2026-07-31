@@ -92,9 +92,9 @@ public sealed record StepExecutionResult(
 /// Everything a step can do wrong is converted into data here so that the
 /// execution loop above never has to catch.
 /// </remarks>
-public sealed class StepExecutor
+public static class StepExecutor
 {
-    public async ValueTask<StepExecutionResult> ExecuteAsync(
+    public static async ValueTask<StepExecutionResult> ExecuteAsync(
         IStep step,
         IStepContext context,
         CancellationToken cancellationToken = default)

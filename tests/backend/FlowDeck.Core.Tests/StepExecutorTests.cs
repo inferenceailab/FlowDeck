@@ -41,10 +41,9 @@ public class StepExecutorTests
     {
         // Given a step implementing IStep that returns Outcome.Next
         var step = new AdvancingStep();
-        var executor = new StepExecutor();
 
         // When the engine executes the step
-        var result = await executor.ExecuteAsync(step, Context());
+        var result = await StepExecutor.ExecuteAsync(step, Context());
 
         // Then the step result is Success
         Assert.Equal(StepStatus.Success, result.Status);
@@ -59,10 +58,9 @@ public class StepExecutorTests
     public async Task Step_returning_Suspend_succeeds_but_does_not_advance()
     {
         // Given a step returning Outcome.Suspend
-        var executor = new StepExecutor();
 
         // When the engine executes the step
-        var result = await executor.ExecuteAsync(new SuspendingStep(), Context("B"));
+        var result = await StepExecutor.ExecuteAsync(new SuspendingStep(), Context("B"));
 
         // Then the instance remains at the same step
         Assert.False(result.ShouldAdvance);
@@ -76,9 +74,8 @@ public class StepExecutorTests
     [Fact]
     public async Task Advancing_step_leaves_the_instance_running()
     {
-        var executor = new StepExecutor();
 
-        var result = await executor.ExecuteAsync(new AdvancingStep(), Context());
+        var result = await StepExecutor.ExecuteAsync(new AdvancingStep(), Context());
 
         Assert.Equal(InstanceStatus.Running, result.ResultingInstanceStatus);
     }
@@ -88,9 +85,8 @@ public class StepExecutorTests
     {
         // A step is untrusted business code. Its exception must become data on
         // the result, never propagate out and take the engine loop down.
-        var executor = new StepExecutor();
 
-        var result = await executor.ExecuteAsync(new ThrowingStep(), Context("B"));
+        var result = await StepExecutor.ExecuteAsync(new ThrowingStep(), Context("B"));
 
         Assert.Equal(StepStatus.Failed, result.Status);
         Assert.False(result.ShouldAdvance);
@@ -105,20 +101,18 @@ public class StepExecutorTests
         // Cancellation is the engine shutting down, not the step failing.
         // Recording it as Failed would mark healthy instances as broken on
         // every deployment.
-        var executor = new StepExecutor();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            async () => await executor.ExecuteAsync(new AdvancingStep(), Context(), cts.Token));
+            async () => await StepExecutor.ExecuteAsync(new AdvancingStep(), Context(), cts.Token));
     }
 
     [Fact]
     public async Task Null_step_is_rejected()
     {
-        var executor = new StepExecutor();
 
         await Assert.ThrowsAsync<ArgumentNullException>(
-            async () => await executor.ExecuteAsync(null!, Context()));
+            async () => await StepExecutor.ExecuteAsync(null!, Context()));
     }
 }

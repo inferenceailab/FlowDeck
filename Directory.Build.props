@@ -1,0 +1,56 @@
+<Project>
+
+  <!--
+    Applies to every project in the repository, so a new project inherits the
+    analysis rather than needing to remember it.
+  -->
+
+  <PropertyGroup>
+    <!--
+      Analysers run on build, including in the IDE, so a finding surfaces while
+      the code is being written rather than in a CI log an hour later.
+    -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <!--
+      The SDK default, not Recommended. Recommended switches on a large set of
+      Microsoft CA rules that nobody asked for, and mixing them in with the
+      Sonar rules that were actually requested makes it impossible to tell
+      which findings came from the decision being made here.
+    -->
+    <AnalysisMode>Default</AnalysisMode>
+
+    <!--
+      Warnings are errors, but only because the tree is clean.
+
+      Turning this on over an unanalysed codebase breaks the build until every
+      finding is triaged, which pressures whoever hits it into suppressing
+      rules wholesale. So the findings were fixed first - the analyser reported
+      44, all of them addressed - and the ratchet applied afterwards.
+
+      From zero, every new finding is a build failure at the moment it is
+      written. A warning nobody must act on is a warning everybody scrolls
+      past.
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      SonarAnalyzer.CSharp: maintainability and reliability rules of the kind
+      GitHub Code Quality reports, which is unavailable on this plan (it is
+      Enterprise Cloud and Team only). Running the analysis locally and in CI
+      gets the same class of finding without the plan.
+
+      PrivateAssets="all" so it never flows to a consumer of FlowDeck.Core.
+      An analyser is a build-time tool; leaking it would impose these rules on
+      anyone referencing the package.
+    -->
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.31.0.145097">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

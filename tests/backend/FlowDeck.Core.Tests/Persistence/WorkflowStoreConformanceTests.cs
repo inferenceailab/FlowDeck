@@ -67,7 +67,7 @@ public abstract class WorkflowStoreConformanceTests
         var found = await store.FindAsync(record.Id);
 
         Assert.NotNull(found);
-        Assert.Equal(record.Id, found!.Id);
+        Assert.Equal(record.Id, found.Id);
         Assert.Equal("order", found.DefinitionId);
         Assert.Equal(InstanceStatus.Running, found.Status);
     }
@@ -107,7 +107,7 @@ public abstract class WorkflowStoreConformanceTests
             loaded! with { Status = InstanceStatus.Completed, CurrentStepName = null }, []);
 
         Assert.Equal(InstanceStatus.Completed, saved.Status);
-        Assert.True(saved.Revision > loaded!.Revision);
+        Assert.True(saved.Revision > loaded.Revision);
 
         var reloaded = await store.FindAsync(record.Id);
         Assert.Equal(InstanceStatus.Completed, reloaded!.Status);

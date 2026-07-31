@@ -43,7 +43,7 @@ public abstract class RelationalConformanceTests : WorkflowStoreConformanceTests
             $"{this.DatabaseName} is not configured. Set {this.ConnectionStringVariable} to run these tests.");
 
         var builder = new DbContextOptionsBuilder<WorkflowDbContext>();
-        this.Configure(builder, connectionString!);
+        this.Configure(builder, connectionString);
         var options = builder.Options;
 
         // Each test gets a clean schema. Dropping first rather than trusting
