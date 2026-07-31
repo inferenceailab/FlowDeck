@@ -283,6 +283,7 @@ public sealed class EfCoreWorkflowStore(
         row.FailedStepName = record.FailedStepName;
         row.ErrorType = record.ErrorType;
         row.ErrorMessage = record.ErrorMessage;
+        row.StepAttempts = record.StepAttempts;
         row.Revision = record.Revision;
         row.DataJson = this.serializer.Serialize(record.Data);
 
@@ -310,6 +311,7 @@ public sealed class EfCoreWorkflowStore(
         FailedStepName = row.FailedStepName,
         ErrorType = row.ErrorType,
         ErrorMessage = row.ErrorMessage,
+        StepAttempts = row.StepAttempts,
         Data = this.serializer.Deserialize(row.DataJson),
         Input = row.InputJson is null
             ? null

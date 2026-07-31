@@ -292,6 +292,50 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(T0.AddMinutes(1), found.CompletedAt);
     }
 
+    [SkippableFact]
+    public async Task The_attempt_count_round_trips()
+    {
+        // #106. A store that drops this silently turns a bounded retry into an
+        // unbounded one: every restart would reload zero attempts and the step
+        // would run forever against a service that is already struggling.
+        //
+        // Part of the contract rather than one provider's test, because a
+        // provider mapping row to record by hand is exactly where a field goes
+        // missing without anything failing to compile.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with { StepAttempts = 2 };
+
+        await store.CreateAsync(record);
+        Assert.Equal(2, (await store.FindAsync(record.Id))!.StepAttempts);
+
+        var loaded = await store.FindAsync(record.Id);
+        await store.SaveAsync(loaded! with { StepAttempts = 3 }, []);
+
+        Assert.Equal(3, (await store.FindAsync(record.Id))!.StepAttempts);
+    }
+
+    [SkippableFact]
+    public async Task A_reset_attempt_count_round_trips_as_zero()
+    {
+        // The reset path matters as much as the increment. A store that only
+        // ever wrote a non-zero value - by treating zero as "unset" and leaving
+        // the column alone - would carry a stale count into the next step.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with { StepAttempts = 4 };
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+
+        // Guards the assertion below from being vacuous: zero is the default,
+        // so a store that never persisted the field at all would "pass" the
+        // reset check while failing this one.
+        Assert.Equal(4, loaded!.StepAttempts);
+
+        await store.SaveAsync(loaded with { StepAttempts = 0 }, []);
+
+        Assert.Equal(0, (await store.FindAsync(record.Id))!.StepAttempts);
+    }
+
     // --------------------------------------------------------------- list
 
     [SkippableFact]

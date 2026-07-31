@@ -35,6 +35,16 @@ public sealed class StoredInstance
 
     public string? ErrorMessage { get; set; }
 
+    /// <summary>
+    /// Executions of the current step so far, including the one in progress.
+    /// </summary>
+    /// <remarks>
+    /// Durable rather than in-memory (#106): a host recycling during an outage
+    /// would otherwise reload zero and retry past the policy's ceiling, however
+    /// often it restarted.
+    /// </remarks>
+    public int StepAttempts { get; set; }
+
     /// <summary>Workflow data, serialised per ADR-0014.</summary>
     public string DataJson { get; set; } = string.Empty;
 
