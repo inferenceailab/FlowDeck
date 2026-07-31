@@ -1,0 +1,181 @@
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+  margin: 0 0 0.25rem;
+}
+
+h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 1.75rem 0 0.75rem;
+}
+
+.version,
+.instance-id {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.instance-id {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+.detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.detail-facts dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.detail-facts dd {
+  margin: 0.15rem 0 0;
+}
+
+/*
+  The answer before the evidence. An operator opening this view after an alert
+  wants to know where it broke, not to scan a timeline for a red marker.
+*/
+.failure-summary {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--status-failed);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--status-failed) 8%, transparent);
+}
+
+.failure-summary p {
+  margin: 0;
+}
+
+.failure-detail,
+.entry-error {
+  margin-top: 0.3rem;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-entry {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.entry-marker {
+  flex: 0 0 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--status-completed);
+  color: var(--status-completed);
+  font-size: 0.75rem;
+}
+
+.entry-failed .entry-marker {
+  border-color: var(--status-failed);
+  color: var(--status-failed);
+}
+
+.entry-body {
+  flex: 1;
+}
+
+.entry-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.entry-step {
+  font-weight: 600;
+}
+
+/*
+  The outcome as a word, so the marker glyph is never the only signal
+  (ADR-0016).
+*/
+.entry-status {
+  font-size: 0.8rem;
+  color: var(--status-completed);
+}
+
+.entry-failed .entry-status {
+  color: var(--status-failed);
+}
+
+.entry-duration,
+.entry-time {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-time {
+  display: block;
+  margin-top: 0.1rem;
+}
+
+/* ---------------------------------------------------------------- states */
+
+.state {
+  padding: 2rem 1.5rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.state p {
+  margin: 0 0 0.4rem;
+}
+
+.state-error {
+  border-style: solid;
+  border-color: var(--status-failed);
+  background: color-mix(in srgb, var(--status-failed) 8%, transparent);
+}
+
+.state-error button {
+  margin-top: 0.75rem;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.state-error button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

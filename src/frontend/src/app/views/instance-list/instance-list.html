@@ -65,7 +65,14 @@
             @for (instance of page().items; track instance.id) {
               <tr [class.row-failed]="instance.status === 'Failed'">
                 <td>
-                  <code [title]="instance.id">{{ shortId(instance) }}</code>
+                  <!--
+                    A real link, not a click handler on the row. Keyboard
+                    reachable, focusable, and openable in a new tab - none of
+                    which a (click) on a <tr> provides (ADR-0016).
+                  -->
+                  <a [routerLink]="['/instances', instance.id]" [title]="instance.id">
+                    <code>{{ shortId(instance) }}</code>
+                  </a>
                 </td>
 
                 <td>

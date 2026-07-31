@@ -1,6 +1,7 @@
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withFetch } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { InstanceList } from './instance-list';
 import { InstancePage } from '../../api/models';
 import { expectNoAccessibilityViolations } from '../../testing/accessibility';
@@ -43,7 +44,7 @@ describe('InstanceList', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [InstanceList],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(withFetch()), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(InstanceList);
@@ -78,9 +79,20 @@ describe('InstanceList', () => {
     // correlating with a log needs the whole id.
     respondWith(page({}));
 
-    const code: HTMLElement = fixture.nativeElement.querySelector('tbody code');
+    // The title lives on the link, which is the element a user hovers.
+    const link: HTMLElement = fixture.nativeElement.querySelector('tbody a');
 
-    expect(code.getAttribute('title')).toBe('00000000-0000-0000-0000-000000000000');
+    expect(link.getAttribute('title')).toBe('00000000-0000-0000-0000-000000000000');
+  });
+
+  it('links each row to its detail view', () => {
+    // A real link rather than a row click handler: keyboard reachable,
+    // focusable, and openable in a new tab.
+    respondWith(page({}));
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('tbody a');
+
+    expect(link.getAttribute('href')).toBe('/instances/00000000-0000-0000-0000-000000000000');
   });
 
   it('marks a failed row with failure styling', () => {

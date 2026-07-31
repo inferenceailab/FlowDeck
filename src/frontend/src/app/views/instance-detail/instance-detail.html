@@ -1,0 +1,124 @@
+<div aria-live="polite" [attr.aria-busy]="state().kind === 'loading'">
+  @switch (state().kind) {
+    @case ('loading') {
+      <p class="state state-loading" i18n>Loading instance…</p>
+    }
+
+    @case ('error') {
+      <div class="state state-error" role="alert">
+        <p><strong i18n>Could not load this instance.</strong></p>
+        <p class="state-detail">{{ errorMessage() }}</p>
+        <button type="button" (click)="load()" i18n>Try again</button>
+      </div>
+    }
+
+    @case ('ready') {
+      <header class="detail-header">
+        <div>
+          <h1>
+            {{ instance()!.definitionId }}
+            <span class="version" i18n>v{{ instance()!.definitionVersion }}</span>
+          </h1>
+          <code class="instance-id">{{ instance()!.id }}</code>
+        </div>
+
+        <app-status-badge [status]="instance()!.status" />
+      </header>
+
+      <!--
+        A description list, not a table. These are attributes of one thing, and
+        dl gives a screen reader the term/value pairing that a table of two
+        columns would only imply.
+      -->
+      <dl class="detail-facts">
+        <div>
+          <dt i18n>Started</dt>
+          <dd>
+            <time [attr.datetime]="instance()!.createdAt">
+              {{ instance()!.createdAt | date: 'medium' }}
+            </time>
+          </dd>
+        </div>
+
+        @if (instance()!.completedAt) {
+          <div>
+            <dt i18n>Finished</dt>
+            <dd>
+              <time [attr.datetime]="instance()!.completedAt">
+                {{ instance()!.completedAt | date: 'medium' }}
+              </time>
+            </dd>
+          </div>
+        }
+
+        @if (instance()!.currentStepName) {
+          <div>
+            <dt i18n>Current step</dt>
+            <dd>{{ instance()!.currentStepName }}</dd>
+          </div>
+        }
+      </dl>
+
+      <!--
+        The failure is stated before the timeline, not buried in it. An operator
+        opening this view after an alert wants the answer first and the evidence
+        second.
+      -->
+      @if (instance()!.status === 'Failed') {
+        <div class="failure-summary" role="alert">
+          <p>
+            <strong i18n>Failed at step {{ instance()!.failedStepName }}</strong>
+          </p>
+          <p class="failure-detail">
+            {{ instance()!.errorType }}: {{ instance()!.errorMessage }}
+          </p>
+        </div>
+      }
+
+      <h2 i18n>Timeline</h2>
+
+      @if (history().length === 0) {
+        <p class="state state-empty" i18n>No steps have executed yet.</p>
+      } @else {
+        <!--
+          An ordered list: the sequence is the meaning. A step re-entered after
+          a resume genuinely appears twice, and numbering makes that visible
+          rather than looking like a duplicate row.
+        -->
+        <ol class="timeline">
+          @for (entry of history(); track entry.sequence) {
+            <li class="timeline-entry" [class.entry-failed]="isFailurePoint(entry)">
+              <span class="entry-marker" aria-hidden="true">
+                {{ isFailurePoint(entry) ? '✕' : '✓' }}
+              </span>
+
+              <div class="entry-body">
+                <div class="entry-heading">
+                  <span class="entry-step">{{ entry.stepName }}</span>
+
+                  <!--
+                    The outcome word, so the marker glyph is never the only
+                    signal (ADR-0016).
+                  -->
+                  <span class="entry-status">{{ entry.status }}</span>
+
+                  <span class="entry-duration">
+                    {{ entry.durationMs | number: '1.0-1' }}<span i18n>ms</span>
+                  </span>
+                </div>
+
+                <time class="entry-time" [attr.datetime]="entry.startedAt">
+                  {{ entry.startedAt | date: 'medium' }}
+                </time>
+
+                @if (entry.errorMessage) {
+                  <p class="entry-error">{{ entry.errorType }}: {{ entry.errorMessage }}</p>
+                }
+              </div>
+            </li>
+          }
+        </ol>
+      }
+    }
+  }
+</div>
