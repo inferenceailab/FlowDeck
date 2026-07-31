@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
@@ -16,12 +18,27 @@ describe('App shell', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter(routes)],
+      providers: [
+        provideRouter(routes),
+
+        // Navigating in these tests lazily loads a real view, which fetches on
+        // init. Without a testing backend that request escapes to the network
+        // and surfaces as an unhandled rejection that fails the run while every
+        // assertion still passes - a green suite next to a red exit code.
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(App);
     router = TestBed.inject(Router);
     fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    // Requests made by a lazily-loaded view are expected; they simply must not
+    // reach the network.
+    TestBed.inject(HttpTestingController).match(() => true);
   });
 
   it('renders the header and primary navigation', () => {

@@ -38,6 +38,12 @@ builder.Services.AddExceptionHandler<FlowDeckExceptionHandler>();
 
 // Readiness depends on the store; liveness deliberately does not. A node whose
 // database is down should leave rotation, not be restarted.
+// Enums serialise by name rather than ordinal, declared on the types
+// themselves in FlowDeck.Core rather than configured here. Found by generating
+// a frontend client: the document declared InstanceStatus as `integer`, so the
+// API was returning `"status": 2` - unreadable in a dashboard, and an ordinal
+// that would silently change meaning if a status were ever inserted mid-enum.
+
 // #28: a machine-readable description of the API, so clients can be generated
 // rather than hand-written against prose.
 builder.Services.AddOpenApi();

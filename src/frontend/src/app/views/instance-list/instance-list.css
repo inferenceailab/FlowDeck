@@ -1,0 +1,72 @@
+h1 {
+  font-size: 1.35rem;
+  margin: 0 0 1rem;
+}
+
+.instance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.instance-table th {
+  text-align: left;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.instance-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.instance-table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+/*
+  Failure styling: a left border and a tint, on top of a badge that already
+  carries a glyph and a word. Three independent signals, so none is
+  load-bearing on its own (ADR-0016).
+*/
+.row-failed {
+  background: color-mix(in srgb, var(--status-failed) 8%, transparent);
+  box-shadow: inset 3px 0 0 var(--status-failed);
+}
+
+.row-failed:hover {
+  background: color-mix(in srgb, var(--status-failed) 14%, transparent);
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.version {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  margin-left: 0.35rem;
+}
+
+/*
+  Available to assistive technology, invisible on screen. Used for the table
+  caption, which gives a screen reader user the table's purpose without adding
+  a heading sighted users do not need.
+*/
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

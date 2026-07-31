@@ -1,4 +1,5 @@
 using FlowDeck.Core;
+using Microsoft.AspNetCore.Http.HttpResults;
 using FlowDeck.Core.Persistence;
 
 namespace FlowDeck.Api;
@@ -158,14 +159,14 @@ public static class InstanceEndpoints
     /// <c>docs/api.md</c> rather than left as a surprise.
     /// </para>
     /// </remarks>
-    private static async Task<IResult> GetHistoryAsync(
+    private static async Task<Ok<StepHistoryResponse[]>> GetHistoryAsync(
         Guid instanceId,
         WorkflowEngine engine,
         CancellationToken cancellationToken = default)
     {
         var history = await engine.GetHistoryAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
-        return Results.Ok(history.Select(StepHistoryResponse.From).ToArray());
+        return TypedResults.Ok(history.Select(StepHistoryResponse.From).ToArray());
     }
 
     /// <summary>
@@ -190,14 +191,14 @@ public static class InstanceEndpoints
     /// state the instance is in.
     /// </para>
     /// </remarks>
-    private static async Task<IResult> CancelAsync(
+    private static async Task<Accepted<InstanceResponse>> CancelAsync(
         Guid instanceId,
         WorkflowEngine engine,
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
-        return Results.Accepted(
+        return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",
             InstanceResponse.From(instance));
     }
@@ -210,7 +211,7 @@ public static class InstanceEndpoints
     /// 1", not "page 0". The offset arithmetic lives here rather than in every
     /// client.
     /// </remarks>
-    private static async Task<IResult> ListAsync(
+    private static async Task<Ok<InstancePage>> ListAsync(
         WorkflowEngine engine,
         InstanceStatus? status = null,
         string? definitionId = null,
@@ -235,7 +236,7 @@ public static class InstanceEndpoints
         var instances = await engine.ListInstancesAsync(filter, cancellationToken).ConfigureAwait(false);
         var total = await engine.CountInstancesAsync(filter, cancellationToken).ConfigureAwait(false);
 
-        return Results.Ok(new InstancePage(
+        return TypedResults.Ok(new InstancePage(
             [.. instances.Select(InstanceResponse.From)],
             total,
             page,
@@ -251,7 +252,7 @@ public static class InstanceEndpoints
     /// 404 is chosen because "no such instance" is true either way and it
     /// avoids leaking which id formats the server considers plausible.
     /// </remarks>
-    private static async Task<IResult> GetAsync(
+    private static async Task<Ok<InstanceResponse>> GetAsync(
         Guid instanceId,
         WorkflowEngine engine,
         CancellationToken cancellationToken = default)
@@ -261,6 +262,6 @@ public static class InstanceEndpoints
         // duplicate the mapping in a second place.
         var instance = await engine.GetInstanceAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
-        return Results.Ok(InstanceResponse.From(instance));
+        return TypedResults.Ok(InstanceResponse.From(instance));
     }
 }

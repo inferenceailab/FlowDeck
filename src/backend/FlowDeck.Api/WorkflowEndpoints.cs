@@ -1,4 +1,5 @@
 using FlowDeck.Core;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace FlowDeck.Api;
 
@@ -63,7 +64,7 @@ public static class WorkflowEndpoints
     /// and #40 is where authoring over the wire would be decided.
     /// </para>
     /// </remarks>
-    private static Task<IResult> ListDefinitionsAsync(WorkflowRegistry registry)
+    private static Task<Ok<WorkflowDefinitionResponse[]>> ListDefinitionsAsync(WorkflowRegistry registry)
     {
         var definitions = registry.GetAll()
             .Select(definition => new WorkflowDefinitionResponse(
@@ -72,7 +73,7 @@ public static class WorkflowEndpoints
                 definition.InputType?.Name))
             .ToArray();
 
-        return Task.FromResult(Results.Ok(definitions));
+        return Task.FromResult(TypedResults.Ok(definitions));
     }
 
     /// <summary>
@@ -91,7 +92,7 @@ public static class WorkflowEndpoints
     /// each version bump.
     /// </para>
     /// </remarks>
-    private static async Task<IResult> StartAsync(
+    private static async Task<Accepted<StartInstanceResponse>> StartAsync(
         string definitionId,
         WorkflowEngine engine,
         WorkflowRegistry registry,
@@ -118,7 +119,7 @@ public static class WorkflowEndpoints
 
         // Location points at the instance resource so a caller can poll it
         // without constructing the URL itself.
-        return Results.Accepted(
+        return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",
             new StartInstanceResponse(instance.Id, instance.Status));
     }

@@ -1,0 +1,41 @@
+/*
+  Status is carried by three things at once - colour, glyph and word - so no
+  single channel is load-bearing (ADR-0016).
+*/
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 1rem;
+  border: 1px solid currentcolor;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-glyph {
+  font-size: 0.8em;
+  line-height: 1;
+}
+
+.badge-running {
+  color: var(--status-running);
+}
+
+.badge-suspended {
+  color: var(--status-suspended);
+}
+
+.badge-completed {
+  color: var(--status-completed);
+}
+
+.badge-failed {
+  color: var(--status-failed);
+}
+
+.badge-cancelled {
+  color: var(--status-cancelled);
+}
