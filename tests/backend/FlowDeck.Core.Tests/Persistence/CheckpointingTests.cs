@@ -48,6 +48,9 @@ public class CheckpointingTests
 
         public Task<int> CountAsync(InstanceFilter filter, CancellationToken cancellationToken = default) =>
             inner.CountAsync(filter, cancellationToken);
+
+        public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
+            inner.PurgeAsync(completedBefore, cancellationToken);
     }
 
     private sealed class NoopStep : IStep

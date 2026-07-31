@@ -154,6 +154,38 @@ public sealed class InMemoryWorkflowStore(WorkflowDataSerializer? serializer = n
         }
     }
 
+    public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (this.gate)
+        {
+            var doomed = this.instances.Values
+                .Where(record => record.Status
+                    is InstanceStatus.Completed
+                    or InstanceStatus.Failed
+                    or InstanceStatus.Cancelled)
+
+                // A terminal instance with no completion time is a data defect.
+                // Guessing its age would delete something on the strength of a
+                // bug, so it is left alone and stays visible.
+                .Where(record => record.CompletedAt is { } completedAt && completedAt < completedBefore)
+                .Select(record => record.Id)
+                .ToArray();
+
+            foreach (var id in doomed)
+            {
+                this.instances.Remove(id);
+
+                // History outliving its instance would leak storage forever and
+                // orphan rows nothing can join back to.
+                this.history.Remove(id);
+            }
+
+            return Task.FromResult(doomed.Length);
+        }
+    }
+
     private IEnumerable<WorkflowInstanceRecord> Matching(InstanceFilter filter) =>
         this.instances.Values
             .Where(record => filter.Status is null || record.Status == filter.Status)
