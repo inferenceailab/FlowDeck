@@ -28,6 +28,28 @@ Only the default branch (`main`) receives security fixes.
 | Allowed Actions | GitHub-owned and verified creators only |
 | Actions must be SHA-pinned | required |
 | Web commit sign-off | required |
+| Signed commits | all commits signed with SSH key, verified by GitHub |
+| Local secret scanning | `gitleaks` pre-commit hook (`.githooks/pre-commit`) |
+
+## Setting Up a Clone
+
+`core.hooksPath` is local config and is not carried by `git clone`. After
+cloning, run:
+
+```sh
+git config core.hooksPath .githooks
+scoop install gitleaks   # or see https://github.com/gitleaks/gitleaks#installing
+```
+
+The hook refuses to run if `gitleaks` is missing, rather than silently letting
+unscanned commits through. Bypass with `git commit --no-verify` only if you are
+certain; if a secret ever reaches a commit object, rotate it — amending does not
+remove it from the reflog.
+
+Note: the default gitleaks ruleset does **not** flag a bare AWS access key ID
+(`AKIA…`). It does catch GitHub PATs, Slack tokens, and private keys. Add
+custom rules in `.gitleaks.toml` if the project starts handling AWS
+credentials.
 
 ## Not Currently Available
 
