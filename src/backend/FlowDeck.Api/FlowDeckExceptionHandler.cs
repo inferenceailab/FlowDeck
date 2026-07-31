@@ -85,10 +85,17 @@ public sealed class FlowDeckExceptionHandler(IProblemDetailsService problemDetai
                 Status = statusCode,
                 Title = TitleFor(exception),
 
+                // The field a client should branch on. Status codes are too
+                // coarse: three problems here map to 409.
+                Type = ProblemTypes.For(exception),
+
                 // The engine's messages name the definition, instance or types
                 // involved, which is exactly what an operator reading a log
                 // needs. They contain no user data.
                 Detail = exception.Message,
+
+                // Which request this was about, per RFC 9457.
+                Instance = $"{httpContext.Request.Method} {httpContext.Request.Path}",
             },
         }).ConfigureAwait(false);
     }

@@ -20,7 +20,20 @@ builder.Services.AddSingleton(provider => new WorkflowEngine(
 
 // Engine faults map to status codes in one place, so a client can rely on the
 // mapping rather than inferring it per endpoint.
-builder.Services.AddProblemDetails();
+builder.Services.AddProblemDetails(options =>
+    options.CustomizeProblemDetails = context =>
+    {
+        // Correlates a response a user is looking at with the server-side logs
+        // for that request. Without it, "it returned a 500" is unactionable.
+        context.ProblemDetails.Extensions["traceId"] =
+            System.Diagnostics.Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
+
+        // Applies to responses the framework produces without an exception -
+        // routing 404s, parameter-binding 400s - which would otherwise carry no
+        // instance at all.
+        context.ProblemDetails.Instance ??=
+            $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}";
+    });
 builder.Services.AddExceptionHandler<FlowDeckExceptionHandler>();
 
 // Readiness depends on the store; liveness deliberately does not. A node whose
@@ -31,6 +44,11 @@ builder.Services.AddHealthChecks()
 var app = builder.Build();
 
 app.UseExceptionHandler();
+
+// Without this, a status code produced without an exception - a routing 404, a
+// parameter-binding 400 - returns an empty body. Clients would get problem
+// details for some errors and nothing for others, which is not a contract.
+app.UseStatusCodePages();
 
 // Liveness: the process is up and the pipeline responds. No dependencies, so a
 // database outage cannot trigger a restart loop that makes recovery harder.
