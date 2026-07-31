@@ -49,7 +49,7 @@ public class GetInstanceEndpointTests
         var body = await response.Content.ReadFromJsonAsync<InstanceResponse>();
 
         Assert.NotNull(body);
-        Assert.Equal(id, body!.Id);
+        Assert.Equal(id, body.Id);
         Assert.Equal(InstanceStatus.Suspended, body.Status);
         Assert.Equal("wait", body.CurrentStepName);
         Assert.NotEqual(default, body.CreatedAt);

@@ -32,7 +32,7 @@ public class StartInstanceEndpointTests
         // And the body contains the new instance id
         var body = await response.Content.ReadFromJsonAsync<StartInstanceResponse>();
         Assert.NotNull(body);
-        Assert.NotEqual(Guid.Empty, body!.InstanceId);
+        Assert.NotEqual(Guid.Empty, body.InstanceId);
 
         // And the Location header points at the instance resource
         Assert.Equal($"/api/instances/{body.InstanceId}", response.Headers.Location?.ToString());

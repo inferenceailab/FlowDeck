@@ -83,7 +83,7 @@ public sealed class SchemaMigrationTests : IAsyncDisposable
         var survivor = await store.FindAsync(record.Id);
 
         Assert.NotNull(survivor);
-        Assert.Equal(InstanceStatus.Suspended, survivor!.Status);
+        Assert.Equal(InstanceStatus.Suspended, survivor.Status);
         Assert.Equal("B", survivor.CurrentStepName);
     }
 

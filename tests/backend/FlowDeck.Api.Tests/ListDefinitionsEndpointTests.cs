@@ -69,7 +69,8 @@ public class ListDefinitionsEndpointTests
         using var response = await client.GetAsync("/api/workflows");
         var definitions = await response.Content.ReadFromJsonAsync<WorkflowDefinitionResponse[]>();
 
-        Assert.Equal("OrderRequest", definitions!.Single(d => d.Id == "typed").InputTypeName);
+        Assert.NotNull(definitions);
+        Assert.Equal("OrderRequest", definitions.Single(d => d.Id == "typed").InputTypeName);
         Assert.Null(definitions.Single(d => d.Id == "simple").InputTypeName);
     }
 

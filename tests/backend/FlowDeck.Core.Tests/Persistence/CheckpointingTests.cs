@@ -85,7 +85,7 @@ public class CheckpointingTests
         }
     }
 
-    private static (WorkflowEngine Engine, CountingStore Store) Build(Func<IStep> middle)
+    private static (WorkflowEngine Engine, CountingStore Store) BuildEngine(Func<IStep> middle)
     {
         var registry = new WorkflowRegistry();
         registry.Register(new ThreeStep(middle));
@@ -97,7 +97,7 @@ public class CheckpointingTests
     public async Task State_is_written_after_each_step()
     {
         // Given a three step workflow
-        var (engine, store) = Build(() => new NoopStep());
+        var (engine, store) = BuildEngine(() => new NoopStep());
 
         // When the instance executes to completion
         var instance = await engine.StartAsync("three-step", 1);
@@ -117,7 +117,7 @@ public class CheckpointingTests
     {
         // Creating it afterwards would hide exactly the instances an operator
         // needs: the ones that suspended or failed partway.
-        var (engine, store) = Build(() => new SuspendingStep());
+        var (engine, store) = BuildEngine(() => new SuspendingStep());
 
         await engine.StartAsync("three-step", 1);
 
@@ -127,7 +127,7 @@ public class CheckpointingTests
     [Fact]
     public async Task A_suspended_instance_is_checkpointed_where_it_stopped()
     {
-        var (engine, _) = Build(() => new SuspendingStep());
+        var (engine, _) = BuildEngine(() => new SuspendingStep());
 
         var instance = await engine.StartAsync("three-step", 1);
         var persisted = await engine.GetInstanceAsync(instance.Id);
@@ -142,7 +142,7 @@ public class CheckpointingTests
     [Fact]
     public async Task A_failed_instance_is_checkpointed_with_its_failure()
     {
-        var (engine, _) = Build(() => new ThrowingStep());
+        var (engine, _) = BuildEngine(() => new ThrowingStep());
 
         var instance = await engine.StartAsync("three-step", 1);
         var persisted = await engine.GetInstanceAsync(instance.Id);
@@ -159,7 +159,7 @@ public class CheckpointingTests
     {
         // Without this, two writers could not detect each other (#19) - every
         // save would look like the first.
-        var (engine, _) = Build(() => new NoopStep());
+        var (engine, _) = BuildEngine(() => new NoopStep());
 
         var instance = await engine.StartAsync("three-step", 1);
 
@@ -171,7 +171,7 @@ public class CheckpointingTests
     [Fact]
     public async Task A_completed_instance_holds_no_current_step()
     {
-        var (engine, _) = Build(() => new NoopStep());
+        var (engine, _) = BuildEngine(() => new NoopStep());
 
         var instance = await engine.StartAsync("three-step", 1);
         var persisted = await engine.GetInstanceAsync(instance.Id);
@@ -183,7 +183,7 @@ public class CheckpointingTests
     [Fact]
     public async Task Nothing_is_persisted_when_the_definition_is_unknown()
     {
-        var (engine, store) = Build(() => new NoopStep());
+        var (engine, store) = BuildEngine(() => new NoopStep());
 
         await Assert.ThrowsAsync<DefinitionNotFoundException>(
             async () => await engine.StartAsync("does-not-exist", 1));

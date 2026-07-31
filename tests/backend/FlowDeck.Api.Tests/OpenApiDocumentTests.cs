@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace FlowDeck.Api.Tests;
 
@@ -106,12 +108,18 @@ public class OpenApiDocumentTests
     [Fact]
     public async Task The_document_is_served_outside_Development()
     {
-        // The template only maps OpenAPI in Development. This API is deployed to
-        // a homelab behind the operator's own network boundary, and a
-        // description a client cannot fetch from the running server is one that
-        // goes stale.
+        // The template only maps OpenAPI in Development, and FlowDeck maps it
+        // unconditionally: a description a client cannot fetch from the running
+        // server is one that goes stale.
+        //
+        // The environment is set explicitly. WebApplicationFactory hosts in
+        // Development by default, so the original version of this test ran
+        // *inside* Development and proved nothing at all - it was byte-identical
+        // to the test above, which is how SonarAnalyzer found it.
         using var factory = new FlowDeckApiFactory().With(new SimpleWorkflow());
-        using var client = factory.CreateClient();
+        using var client = factory
+            .WithWebHostBuilder(builder => builder.UseEnvironment("Production"))
+            .CreateClient();
 
         using var response = await client.GetAsync("/openapi/v1.json");
 

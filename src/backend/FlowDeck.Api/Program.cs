@@ -88,4 +88,11 @@ await app.RunAsync();
 /// tests. Testing a copy of the composition root would prove nothing about the
 /// one that ships.
 /// </summary>
-public partial class Program;
+public partial class Program
+{
+    // Never instantiated - it exists only as a type argument for
+    // WebApplicationFactory<Program>. A private constructor says so.
+    private Program()
+    {
+    }
+}

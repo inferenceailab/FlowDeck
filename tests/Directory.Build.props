@@ -1,0 +1,31 @@
+<Project>
+
+  <!--
+    Inherits the repository-wide analysis, then relaxes the rules that are wrong
+    for test code specifically. Applies to every project under tests/.
+  -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!--
+      CA1707  Identifiers should not contain underscores.
+              Test names in this repository are sentences:
+              A_completed_step_is_never_re_executed_after_a_restart. That is
+              deliberate and makes a failure report readable. The rule is aimed
+              at public API surface, which a test assembly does not have.
+
+      CA1861  Prefer static readonly over constant array arguments.
+              Micro-optimisation for hot paths; test data read once is neither.
+
+      S3871   Exception types should be public.
+              Applies to exceptions a caller might catch. Test doubles that
+              throw a private nested exception are not that.
+
+      S2325   Methods should be static where possible.
+              Fires on test-double members that implement an interface and
+              happen not to touch instance state.
+    -->
+    <NoWarn>$(NoWarn);CA1707;CA1861;S3871;S2325</NoWarn>
+  </PropertyGroup>
+
+</Project>

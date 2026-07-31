@@ -19,7 +19,6 @@ namespace FlowDeck.Core;
 public sealed class WorkflowEngine
 {
     private readonly WorkflowRegistry registry;
-    private readonly StepExecutor executor;
     private readonly TimeProvider timeProvider;
     private readonly IWorkflowStore store;
 
@@ -31,8 +30,6 @@ public sealed class WorkflowEngine
         ArgumentNullException.ThrowIfNull(registry);
 
         this.registry = registry;
-        this.executor = new StepExecutor();
-
         // Injectable so #8 can assert on timestamps without sleeping.
         this.timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -266,7 +263,7 @@ public sealed class WorkflowEngine
             var startedAt = this.timeProvider.GetUtcNow();
 
             var context = new StepContext(instance.Id, step.Name, data, input);
-            var result = await this.executor
+            var result = await StepExecutor
                 .ExecuteAsync(step.Factory(), context, cancellationToken)
                 .ConfigureAwait(false);
 

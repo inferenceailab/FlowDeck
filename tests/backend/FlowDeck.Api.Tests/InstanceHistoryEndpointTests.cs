@@ -53,7 +53,8 @@ public class InstanceHistoryEndpointTests
 
         var history = await response.Content.ReadFromJsonAsync<StepHistoryResponse[]>();
 
-        Assert.Equal(["validate", "charge", "ship"], history!.Select(entry => entry.StepName));
+        Assert.NotNull(history);
+        Assert.Equal(["validate", "charge", "ship"], history.Select(entry => entry.StepName));
         Assert.Equal([1, 2, 3], history.Select(entry => entry.Sequence));
     }
 
@@ -89,7 +90,8 @@ public class InstanceHistoryEndpointTests
         using var response = await client.GetAsync($"/api/instances/{id}/history");
         var history = await response.Content.ReadFromJsonAsync<StepHistoryResponse[]>();
 
-        Assert.Equal(["validate", "charge"], history!.Select(entry => entry.StepName));
+        Assert.NotNull(history);
+        Assert.Equal(["validate", "charge"], history.Select(entry => entry.StepName));
 
         var failed = history[1];
         Assert.Equal(StepStatus.Failed, failed.Status);

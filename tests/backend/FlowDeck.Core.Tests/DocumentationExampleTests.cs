@@ -50,7 +50,7 @@ public class DocumentationExampleTests
 
     public sealed class WaitForApproval : IStep
     {
-        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
+        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
             if (!context.Data.TryGet<bool>("approved", out var approved) || !approved)
             {
@@ -122,7 +122,7 @@ public class DocumentationExampleTests
 
     public sealed class ChargeCard : IStep
     {
-        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct)
+        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default)
         {
             _ = context.GetInput<OrderRequest>().Id;
             return ValueTask.FromResult(Outcome.Next);
@@ -185,7 +185,7 @@ public class DocumentationExampleTests
 
     private sealed class AlwaysThrows : IStep
     {
-        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken ct) =>
+        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("card declined");
     }
 
