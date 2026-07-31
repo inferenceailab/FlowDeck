@@ -25,7 +25,7 @@ earlier work, that is reported rather than staged as a false RED.
 | **M2** | **Persistence & Recovery** | **#13–#22** | ✅ **Complete (10/10)** |
 | **M3** | **Minimal API Surface** | **#23–#30** | ✅ **Complete (8/8)** |
 | **M4** | **Dashboard Skeleton** | **#31–#36, #62, #92** | ✅ **Complete (8/8)** |
-| M5 | Retries & Error Handling | #37, #38 | Next — epic only |
+| M5 | Retries & Error Handling | #37 (#103–#108), #38 | In progress |
 | M6 | Distributed Execution | #39 | Epic only |
 | M7 | Visual Designer | #40 | Epic only |
 | M8 | Observability | #41 | Epic only |
