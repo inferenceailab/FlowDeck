@@ -1,0 +1,7 @@
+# Normalize text files in the repository.
+* text=auto
+
+# Shell scripts and git hooks must keep LF endings, or they fail on Linux and
+# macOS with "bad interpreter: /bin/sh^M".
+.githooks/** text eol=lf
+*.sh        text eol=lf

@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Block commits that introduce secrets.
+#
+# Enabled per clone with:  git config core.hooksPath .githooks
+# Emergency bypass:        git commit --no-verify
+#
+# The bypass is deliberately unpleasant to type. If you use it, assume the
+# secret is compromised and rotate it -- a secret that reaches a commit object
+# is recoverable from the reflog even if the commit is later amended away.
+
+set -e
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+	echo "pre-commit: gitleaks is not on PATH -- refusing to commit unscanned." >&2
+	echo "            install it with:  scoop install gitleaks" >&2
+	echo "            or see https://github.com/gitleaks/gitleaks#installing" >&2
+	exit 1
+fi
+
+# --staged   scan only what is about to be committed
+# --redact   never print the secret itself into terminal scrollback or logs
+gitleaks git --staged --redact --no-banner --verbose || {
+	echo "" >&2
+	echo "pre-commit: secrets detected -- commit blocked." >&2
+	echo "            Unstage the finding, or add a rule to .gitleaks.toml if" >&2
+	echo "            it is a genuine false positive." >&2
+	exit 1
+}
