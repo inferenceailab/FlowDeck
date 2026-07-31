@@ -212,8 +212,9 @@ none.
 | A crashed instance is stuck in `Running` | No sweep returns it to `Suspended`, so nothing resumes it | #39 |
 | PostgreSQL and SQL Server conformance runs have never been executed | Both are supported by design and unverified in practice; the suites exist and skip | #78 |
 | Resume requires the definition registered on the recovering host | An unknown definition cannot be resumed | #67 |
-| No retry | Any step failure is terminal | #37 |
+| A retry backoff blocks the calling thread | Only backoffs of seconds are usable; a long one holds an HTTP request open | #39 |
 | No compensation | Partial work is not undone on failure | #38 |
+| No coordination across external services | A workflow spanning services has no cross-service guarantee | #111 |
 | Single node only | No multi-node coordination exists | #39 |
 | Only cancel exists as an operator action | No retry, re-run, or bulk actions | #66 |
 | Resume is not exposed over HTTP or the dashboard | A suspended workflow is only completable in-process | #68 |
