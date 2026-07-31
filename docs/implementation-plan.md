@@ -24,8 +24,8 @@ earlier work, that is reported rather than staged as a false RED.
 | **M1** | **Core Engine Primitives** | **#1–#12** | ✅ **Complete (12/12)** |
 | **M2** | **Persistence & Recovery** | **#13–#22** | ✅ **Complete (10/10)** |
 | **M3** | **Minimal API Surface** | **#23–#30** | ✅ **Complete (8/8)** |
-| M4 | Dashboard Skeleton | #31–#36, #62, #92 | In progress |
-| M5 | Retries & Error Handling | #37, #38 | Epic only |
+| **M4** | **Dashboard Skeleton** | **#31–#36, #62, #92** | ✅ **Complete (8/8)** |
+| M5 | Retries & Error Handling | #37, #38 | Next — epic only |
 | M6 | Distributed Execution | #39 | Epic only |
 | M7 | Visual Designer | #40 | Epic only |
 | M8 | Observability | #41 | Epic only |
@@ -127,6 +127,47 @@ there is nothing to POST; authoring over the wire is #40's question.
 **Carried forward:** the API has **no authentication** (#42), cannot resume a
 suspended instance (#68), and does not expose execution history at all despite
 the engine recording it.
+
+## M4 — Dashboard Skeleton ✅
+
+53 frontend tests, 293 backend. Angular 22.1, Vitest, axe-core.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #62 | Frontend decisions | ADR-0016, ADR-0017, ADR-0018 — written **before** any template |
+| #92 | Execution history over HTTP | Found by writing the architecture first; #33 had no data source |
+| #31 | Application shell | Skip link, landmarks, `aria-current`, axe harness |
+| #32 | Instance list | Generated API client; table with caption and scoped headers |
+| #34 | Loading, empty, error states | `LoadState` union; problem-details messages surfaced |
+| #33 | Detail view and timeline | Failure stated above the evidence, not buried in it |
+| #35 | Cancel from the dashboard | Confirmation gate; disabled not hidden |
+| #36 | Live updates | Five-second polling; in-flight guard; timer cleared on destroy |
+
+**Found while building, not by planning:**
+
+- **`InstanceStatus` serialised as an integer.** The API returned `"status": 2`
+  — unreadable in a dashboard, and an ordinal that would silently change meaning
+  if a status were inserted mid-enum. No backend test could have caught it;
+  only writing a client did.
+- **No DTO appeared in `components.schemas`.** Endpoints returned `IResult`, so
+  OpenAPI inlined every response type anonymously and the document was nearly
+  useless for the generation #28 exists to enable.
+- **The CI test command was wrong.** Written in Phase 2 against Karma;
+  Angular 22 runs Vitest and would have failed on the first frontend run.
+- **`i18n` attributes need `@angular/localize`**, uninstalled — ADR-0017's cost
+  arriving on the first template.
+- **A spec navigated into a lazily-loaded view that fetched**, escaping to the
+  network as an unhandled rejection: every assertion passed while the run exited
+  non-zero.
+
+**Honest limitation:** colour contrast is **not** verified by test. jsdom has no
+layout engine, so axe skips `color-contrast` and the ratios in `styles.css` are
+asserted by comment. Recorded in ADR-0016 rather than left implied by "axe runs
+in CI".
+
+**Carried forward:** the dashboard has no paging controls, so only the newest 50
+instances are reachable in the UI; no workflow-definitions view; and no way to
+resume a suspended instance (#68).
 
 ## M2 — original sequencing notes
 

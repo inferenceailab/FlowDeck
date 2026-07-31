@@ -1,6 +1,6 @@
 # FlowDeck — Architecture
 
-> **Status:** describes what is built as of M3. Sections marked *Planned* are
+> **Status:** describes what is built as of M4. Sections marked *Planned* are
 > not implemented. Where the current implementation is knowingly inadequate,
 > this document says so rather than describing the intended end state as if it
 > existed.
@@ -10,7 +10,7 @@
 ```mermaid
 graph TB
     subgraph client["Client"]
-        UI["Angular 22 Dashboard<br/><i>M4 - planned</i>"]
+        UI["Angular 22 Dashboard"]
         API_CLIENT["API clients"]
     end
 
@@ -62,7 +62,7 @@ graph TB
 | Problem details | RFC 9457 error contract | ✅ M3 |
 | OpenAPI document | Machine-readable API description | ✅ M3 |
 | Health probes | Liveness and readiness | ✅ M3 |
-| Dashboard | Operator UI | ❌ M4 |
+| Dashboard | Angular 22 operator UI | ✅ M4 |
 
 ## Execution model
 
@@ -217,6 +217,8 @@ none.
 | Single node only | No multi-node coordination exists | #39 |
 | Only cancel exists as an operator action | No retry, re-run, or bulk actions | #66 |
 | Resume is not exposed over HTTP or the dashboard | A suspended workflow is only completable in-process | #68 |
+| The dashboard has no paging controls | Only the newest 50 instances are reachable in the UI | — |
+| Colour contrast is not verified by test | jsdom has no layout engine, so axe skips the rule | ADR-0016 |
 | **No authentication** | Anything reachable can start, inspect and cancel workflows | #42 |
 | Execution history is recorded but not exposed over HTTP | A dashboard cannot show a step timeline yet | — |
 | No rate limiting | A client can start instances as fast as it can send | — |
