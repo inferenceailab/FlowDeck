@@ -24,7 +24,7 @@ earlier work, that is reported rather than staged as a false RED.
 | **M1** | **Core Engine Primitives** | **#1–#12** | ✅ **Complete (12/12)** |
 | **M2** | **Persistence & Recovery** | **#13–#22** | ✅ **Complete (10/10)** |
 | **M3** | **Minimal API Surface** | **#23–#30** | ✅ **Complete (8/8)** |
-| M4 | Dashboard Skeleton | #31–#36 | Next |
+| M4 | Dashboard Skeleton | #31–#36, #62, #92 | In progress |
 | M5 | Retries & Error Handling | #37, #38 | Epic only |
 | M6 | Distributed Execution | #39 | Epic only |
 | M7 | Visual Designer | #40 | Epic only |
@@ -185,7 +185,7 @@ Recorded so it is not repeated.
 | --- | --- |
 | The Phase 1 breakdown created 43 issues, none for documentation | #58; future milestones include documentation stories |
 | ADRs were written retrospectively after M1 | Future ADRs ship in the same PR as the change |
-| Frontend milestones have no stories for accessibility or i18n | Add before M4 begins |
+| Frontend milestones have no stories for accessibility or i18n | ✅ Closed by #62: ADR-0016, ADR-0017, ADR-0018 written before M4 started |
 | Four product areas were under-covered or mis-filed - found by review, not by planning | #66, #67, #68 and a scope question on #38 |
 
 ## Definition of Done

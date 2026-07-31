@@ -42,3 +42,6 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0013](0013-persistence-model.md) | Persistence: checkpoint state plus append-only history | Accepted | M2 |
 | [0014](0014-workflow-data-serialisation.md) | Workflow data is serialised with a type allow-list | Accepted | M2 |
 | [0015](0015-migrations-are-owned-by-the-host.md) | Migrations are owned by the host, not shipped | Accepted | M2 |
+| [0016](0016-accessibility-target.md) | Accessibility target is WCAG 2.2 AA, checked in CI | Accepted | M4 |
+| [0017](0017-internationalisation-stance.md) | Mark text for translation now, ship English only | Accepted | M4 |
+| [0018](0018-frontend-state-management.md) | Signals and typed services, no state library | Accepted | M4 |
