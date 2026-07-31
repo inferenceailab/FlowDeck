@@ -39,3 +39,4 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0010](0010-minimise-third-party-dependencies.md) | Minimise third-party dependencies | Accepted | Phase 2 |
 | [0011](0011-api-vocabulary-borrowed-from-workflowcore.md) | API vocabulary borrowed from WorkflowCore | Accepted | M1 |
 | [0012](0012-step-vocabulary-rename.md) | Rename the step vocabulary for clarity | Accepted | M1 |
+| [0013](0013-persistence-model.md) | Persistence: checkpoint state plus append-only history | Accepted | M2 |
