@@ -6,6 +6,7 @@
 | [Architecture](architecture.md) | How it is built, and where it is knowingly incomplete |
 | [Implementation plan](implementation-plan.md) | Milestone roadmap and current status |
 | [Decision records](adr/README.md) | Why things are the way they are |
+| [Prior art](prior-art.md) | What is borrowed from WorkflowCore, Hangfire and Elsa - and what differs |
 | [Defining a workflow](guides/defining-a-workflow.md) | How to use the library |
 | [Deployment](../deploy/README.md) | CI/CD and homelab setup |
 | [Security policy](../SECURITY.md) | Reporting vulnerabilities, enabled protections |

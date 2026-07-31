@@ -42,6 +42,7 @@ Full walkthrough: [Defining a workflow](docs/guides/defining-a-workflow.md).
 | [Architecture](docs/architecture.md) | Components, execution model, limitations |
 | [Implementation plan](docs/implementation-plan.md) | Roadmap and status |
 | [Decision records](docs/adr/README.md) | Why things are the way they are |
+| [Prior art](docs/prior-art.md) | What is borrowed from other engines, and what differs |
 | [Defining a workflow](docs/guides/defining-a-workflow.md) | Usage guide |
 | [Deployment](deploy/README.md) | CI/CD and homelab setup |
 | [Security](SECURITY.md) | Reporting vulnerabilities, enabled protections |
@@ -77,8 +78,14 @@ Work is tracked as GitHub issues grouped into milestones. Stories carry
 Given/When/Then acceptance criteria; tests are written before implementation.
 Non-obvious decisions get an [ADR](docs/adr/README.md) in the same pull request.
 
-## Inspiration
+## Prior art
 
-Design patterns are borrowed deliberately from **WorkflowCore** (step and saga
-model), **Hangfire** (durable state, distributed locking), **Elsa v3**
-(definition versioning, suspension) and **Octopus Deploy** (dashboard UX).
+Design patterns are borrowed deliberately from **WorkflowCore** (step model),
+**Hangfire** (durable state, distributed locking), **Elsa v3** (definition
+versioning, suspension) and **Octopus Deploy** (dashboard UX).
+
+No source code from any of them is copied. Some API *vocabulary* does overlap
+with WorkflowCore, which is recorded openly in
+[ADR-0011](docs/adr/0011-api-vocabulary-borrowed-from-workflowcore.md).
+[Prior art](docs/prior-art.md) sets out what differs, what does not, and what
+was deliberately left behind.
