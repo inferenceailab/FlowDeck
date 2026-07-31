@@ -28,12 +28,21 @@ Only the default branch (`main`) receives security fixes.
 | Allowed Actions | GitHub-owned and verified creators only |
 | Actions must be SHA-pinned | required |
 | Web commit sign-off | required |
-| Force-push / deletion of `main` | blocked |
-| Pull request required to merge to `main` | required |
 
-Code scanning (CodeQL), secret scanning and push protection are not available
-on this plan for private repositories. If this repository is made public, or
-GitHub Code Security / Secret Protection is purchased, enable them.
+## Not Currently Available
+
+These controls are unavailable while this repository is **private on a free
+personal plan**. Making it public, or upgrading to GitHub Pro, enables them.
+
+| Control | Blocked by |
+| --- | --- |
+| Branch protection / rulesets on `main` | needs GitHub Pro, or public |
+| Required pull request and review before merge | needs GitHub Pro, or public |
+| Blocking force-push and branch deletion | needs GitHub Pro, or public |
+| Required signed commits | needs GitHub Pro, or public |
+| Code scanning (CodeQL) | needs GitHub Code Security, or public |
+| Secret scanning and push protection | needs GitHub Secret Protection, or public |
+| Private vulnerability reporting | public repositories only |
 
 ## Dependency Hygiene
 
