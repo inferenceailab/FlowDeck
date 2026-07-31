@@ -41,3 +41,4 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0012](0012-step-vocabulary-rename.md) | Rename the step vocabulary for clarity | Accepted | M1 |
 | [0013](0013-persistence-model.md) | Persistence: checkpoint state plus append-only history | Accepted | M2 |
 | [0014](0014-workflow-data-serialisation.md) | Workflow data is serialised with a type allow-list | Accepted | M2 |
+| [0015](0015-migrations-are-owned-by-the-host.md) | Migrations are owned by the host, not shipped | Accepted | M2 |
