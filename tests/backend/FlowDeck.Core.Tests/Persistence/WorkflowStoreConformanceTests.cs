@@ -1,0 +1,396 @@
+using FlowDeck.Core;
+using FlowDeck.Core.Persistence;
+
+namespace FlowDeck.Core.Tests.Persistence;
+
+/// <summary>
+/// The contract every <see cref="IWorkflowStore"/> implementation must satisfy.
+/// </summary>
+/// <remarks>
+/// Issue #16. This suite is the actual contract - <see cref="IWorkflowStore"/>
+/// is only its signature. #17's EF Core provider subclasses this rather than
+/// being trusted to behave the same way.
+///
+/// Kept provider-agnostic: no test may assume in-memory semantics, and any
+/// setup a provider needs goes in <see cref="CreateStoreAsync"/>.
+/// </remarks>
+public abstract class WorkflowStoreConformanceTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
+
+    /// <summary>Creates an empty store. Called once per test.</summary>
+    protected abstract Task<IWorkflowStore> CreateStoreAsync();
+
+    private static WorkflowInstanceRecord NewRecord(
+        Guid? id = null,
+        InstanceStatus status = InstanceStatus.Running,
+        string definitionId = "order",
+        DateTimeOffset? createdAt = null) => new()
+        {
+            Id = id ?? Guid.NewGuid(),
+            DefinitionId = definitionId,
+            DefinitionVersion = 1,
+            Status = status,
+            CurrentStepIndex = 0,
+            CurrentStepName = "A",
+            CreatedAt = createdAt ?? T0,
+        };
+
+    private static StepHistoryEntry NewHistory(Guid instanceId, string stepName) => new()
+    {
+        InstanceId = instanceId,
+        Sequence = 0, // assigned by the store
+        StepName = stepName,
+        StartedAt = T0,
+        CompletedAt = T0.AddSeconds(1),
+        Status = StepStatus.Success,
+    };
+
+    // ------------------------------------------------------------- create
+
+    [Fact]
+    public async Task A_created_instance_can_be_found()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+
+        await store.CreateAsync(record);
+
+        var found = await store.FindAsync(record.Id);
+
+        Assert.NotNull(found);
+        Assert.Equal(record.Id, found!.Id);
+        Assert.Equal("order", found.DefinitionId);
+        Assert.Equal(InstanceStatus.Running, found.Status);
+    }
+
+    [Fact]
+    public async Task An_unknown_instance_is_reported_as_null_not_an_error()
+    {
+        var store = await this.CreateStoreAsync();
+
+        Assert.Null(await store.FindAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task Creating_the_same_id_twice_is_rejected()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var ex = await Assert.ThrowsAsync<DuplicateInstanceException>(
+            async () => await store.CreateAsync(record));
+
+        Assert.Equal(record.Id, ex.InstanceId);
+    }
+
+    // --------------------------------------------------------------- save
+
+    [Fact]
+    public async Task Saving_updates_state_and_increments_the_revision()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+        var saved = await store.SaveAsync(
+            loaded! with { Status = InstanceStatus.Completed, CurrentStepName = null }, []);
+
+        Assert.Equal(InstanceStatus.Completed, saved.Status);
+        Assert.True(saved.Revision > loaded!.Revision);
+
+        var reloaded = await store.FindAsync(record.Id);
+        Assert.Equal(InstanceStatus.Completed, reloaded!.Status);
+        Assert.Equal(saved.Revision, reloaded.Revision);
+    }
+
+    [Fact]
+    public async Task Saving_from_a_stale_revision_is_rejected()
+    {
+        // Two writers load the same state; the second must lose.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var first = await store.FindAsync(record.Id);
+        var second = await store.FindAsync(record.Id);
+
+        await store.SaveAsync(first! with { CurrentStepName = "B" }, []);
+
+        var ex = await Assert.ThrowsAsync<WorkflowStoreConcurrencyException>(
+            async () => await store.SaveAsync(second! with { CurrentStepName = "C" }, []));
+
+        Assert.Equal(record.Id, ex.InstanceId);
+    }
+
+    [Fact]
+    public async Task A_rejected_save_leaves_the_stored_state_untouched()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var first = await store.FindAsync(record.Id);
+        var stale = await store.FindAsync(record.Id);
+
+        await store.SaveAsync(first! with { CurrentStepName = "B" }, []);
+
+        await Assert.ThrowsAsync<WorkflowStoreConcurrencyException>(
+            async () => await store.SaveAsync(stale! with { CurrentStepName = "C" }, []));
+
+        var reloaded = await store.FindAsync(record.Id);
+        Assert.Equal("B", reloaded!.CurrentStepName);
+    }
+
+    [Fact]
+    public async Task Saving_an_unknown_instance_is_rejected()
+    {
+        var store = await this.CreateStoreAsync();
+
+        await Assert.ThrowsAsync<InstanceNotFoundException>(
+            async () => await store.SaveAsync(NewRecord(), []));
+    }
+
+    // ------------------------------------------------------------ history
+
+    [Fact]
+    public async Task History_is_appended_and_returned_in_order()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+        var afterA = await store.SaveAsync(loaded!, [NewHistory(record.Id, "A")]);
+        await store.SaveAsync(afterA, [NewHistory(record.Id, "B"), NewHistory(record.Id, "C")]);
+
+        var history = await store.GetHistoryAsync(record.Id);
+
+        Assert.Equal(["A", "B", "C"], history.Select(entry => entry.StepName));
+        Assert.Equal([1, 2, 3], history.Select(entry => entry.Sequence));
+    }
+
+    [Fact]
+    public async Task History_for_an_unknown_instance_is_empty()
+    {
+        var store = await this.CreateStoreAsync();
+
+        Assert.Empty(await store.GetHistoryAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task A_rejected_save_appends_no_history()
+    {
+        // The atomicity clause of the contract. If a concurrency failure could
+        // still append history, an instance would end up with history for work
+        // its state says never happened.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var first = await store.FindAsync(record.Id);
+        var stale = await store.FindAsync(record.Id);
+
+        await store.SaveAsync(first!, [NewHistory(record.Id, "A")]);
+
+        await Assert.ThrowsAsync<WorkflowStoreConcurrencyException>(
+            async () => await store.SaveAsync(stale!, [NewHistory(record.Id, "GHOST")]));
+
+        var history = await store.GetHistoryAsync(record.Id);
+
+        Assert.Equal(["A"], history.Select(entry => entry.StepName));
+    }
+
+    [Fact]
+    public async Task Existing_history_is_never_rewritten()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+        var afterA = await store.SaveAsync(loaded!, [NewHistory(record.Id, "A")]);
+        var before = await store.GetHistoryAsync(record.Id);
+
+        await store.SaveAsync(afterA, [NewHistory(record.Id, "B")]);
+        var after = await store.GetHistoryAsync(record.Id);
+
+        Assert.Equal(before[0].StepName, after[0].StepName);
+        Assert.Equal(before[0].Sequence, after[0].Sequence);
+        Assert.Equal(before[0].StartedAt, after[0].StartedAt);
+    }
+
+    // --------------------------------------------------------------- data
+
+    [Fact]
+    public async Task Workflow_data_round_trips()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with
+        {
+            Data = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["orderId"] = 42,
+                ["customer"] = "acme",
+            },
+        };
+
+        await store.CreateAsync(record);
+        var found = await store.FindAsync(record.Id);
+
+        Assert.Equal(2, found!.Data.Count);
+        Assert.Equal(42, found.Data["orderId"]);
+        Assert.Equal("acme", found.Data["customer"]);
+    }
+
+    [Fact]
+    public async Task A_null_data_value_round_trips_as_present()
+    {
+        // Matches WorkflowData's contract (ADR-0005): an explicit null is
+        // distinct from an absent key, and persistence must not collapse them.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with
+        {
+            Data = new Dictionary<string, object?>(StringComparer.Ordinal) { ["note"] = null },
+        };
+
+        await store.CreateAsync(record);
+        var found = await store.FindAsync(record.Id);
+
+        Assert.True(found!.Data.ContainsKey("note"));
+        Assert.Null(found.Data["note"]);
+    }
+
+    [Fact]
+    public async Task Failure_details_round_trip()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord(status: InstanceStatus.Failed) with
+        {
+            FailedStepName = "charge",
+            ErrorType = "InvalidOperationException",
+            ErrorMessage = "card declined",
+            CompletedAt = T0.AddMinutes(1),
+        };
+
+        await store.CreateAsync(record);
+        var found = await store.FindAsync(record.Id);
+
+        Assert.Equal("charge", found!.FailedStepName);
+        Assert.Equal("InvalidOperationException", found.ErrorType);
+        Assert.Equal("card declined", found.ErrorMessage);
+        Assert.Equal(T0.AddMinutes(1), found.CompletedAt);
+    }
+
+    // --------------------------------------------------------------- list
+
+    [Fact]
+    public async Task Listing_returns_newest_first()
+    {
+        var store = await this.CreateStoreAsync();
+        var older = NewRecord(createdAt: T0);
+        var newer = NewRecord(createdAt: T0.AddHours(1));
+
+        await store.CreateAsync(older);
+        await store.CreateAsync(newer);
+
+        var listed = await store.ListAsync(new InstanceFilter());
+
+        Assert.Equal([newer.Id, older.Id], listed.Select(record => record.Id));
+    }
+
+    [Fact]
+    public async Task Listing_filters_by_status()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Failed));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Completed));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Failed));
+
+        var failed = await store.ListAsync(new InstanceFilter { Status = InstanceStatus.Failed });
+
+        Assert.Equal(2, failed.Count);
+        Assert.All(failed, record => Assert.Equal(InstanceStatus.Failed, record.Status));
+    }
+
+    [Fact]
+    public async Task Listing_filters_by_definition_id()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(definitionId: "order"));
+        await store.CreateAsync(NewRecord(definitionId: "shipment"));
+
+        var orders = await store.ListAsync(new InstanceFilter { DefinitionId = "order" });
+
+        Assert.Single(orders);
+        Assert.Equal("order", orders[0].DefinitionId);
+    }
+
+    [Fact]
+    public async Task Listing_pages_with_skip_and_take()
+    {
+        var store = await this.CreateStoreAsync();
+
+        for (var i = 0; i < 5; i++)
+        {
+            await store.CreateAsync(NewRecord(createdAt: T0.AddMinutes(i)));
+        }
+
+        var page = await store.ListAsync(new InstanceFilter { Skip = 1, Take = 2 });
+
+        Assert.Equal(2, page.Count);
+
+        // Newest first, so skipping one starts at the second newest.
+        Assert.Equal(T0.AddMinutes(3), page[0].CreatedAt);
+        Assert.Equal(T0.AddMinutes(2), page[1].CreatedAt);
+    }
+
+    [Fact]
+    public async Task Counting_ignores_paging_but_honours_filters()
+    {
+        // #25 must report a total alongside a page. A count that respected Take
+        // would always equal the page size and tell a caller nothing.
+        var store = await this.CreateStoreAsync();
+
+        for (var i = 0; i < 5; i++)
+        {
+            await store.CreateAsync(NewRecord(status: InstanceStatus.Failed));
+        }
+
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Completed));
+
+        var count = await store.CountAsync(
+            new InstanceFilter { Status = InstanceStatus.Failed, Skip = 1, Take = 2 });
+
+        Assert.Equal(5, count);
+    }
+
+    [Fact]
+    public async Task Listing_an_empty_store_returns_empty_not_null()
+    {
+        var store = await this.CreateStoreAsync();
+
+        Assert.Empty(await store.ListAsync(new InstanceFilter()));
+        Assert.Equal(0, await store.CountAsync(new InstanceFilter()));
+    }
+
+    // -------------------------------------------------------- isolation
+
+    [Fact]
+    public async Task Records_returned_by_the_store_are_not_live_references()
+    {
+        // A provider that hands back its own stored object would let a caller
+        // mutate persisted state without saving - and would behave differently
+        // from a database-backed provider, defeating the point of this suite.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var first = await store.FindAsync(record.Id);
+        var second = await store.FindAsync(record.Id);
+
+        Assert.NotSame(first, second);
+    }
+}
