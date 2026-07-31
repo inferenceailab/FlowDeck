@@ -18,6 +18,15 @@ dist/
 build/
 out/
 target/
+
+# .NET
+bin/
+obj/
+artifacts/
+*.user
+TestResults/
+[Dd]ebug/
+[Rr]elease/
 __pycache__/
 *.pyc
 .venv/
