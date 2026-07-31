@@ -23,8 +23,8 @@ earlier work, that is reported rather than staged as a false RED.
 | Phase 2 | CI/CD infrastructure | #44 | ✅ Complete |
 | **M1** | **Core Engine Primitives** | **#1–#12** | ✅ **Complete (12/12)** |
 | **M2** | **Persistence & Recovery** | **#13–#22** | ✅ **Complete (10/10)** |
-| M3 | Minimal API Surface | #23–#30 | Next |
-| M4 | Dashboard Skeleton | #31–#36 | Not started |
+| **M3** | **Minimal API Surface** | **#23–#30** | ✅ **Complete (8/8)** |
+| M4 | Dashboard Skeleton | #31–#36 | Next |
 | M5 | Retries & Error Handling | #37, #38 | Epic only |
 | M6 | Distributed Execution | #39 | Epic only |
 | M7 | Visual Designer | #40 | Epic only |
@@ -94,6 +94,39 @@ no production code — earlier work already satisfied them, and their PRs say so
 **Carried forward:** #78 (verify EF Core against PostgreSQL, not just SQLite).
 It needs either a Docker dependency or a database, so it is a decision rather
 than a task.
+
+## M3 — Minimal API Surface ✅
+
+285 tests (62 API, 223 core). Every story required production code — no
+characterization-only stories this milestone, unlike M1 and M2.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #23 | Start an instance over HTTP | API scaffold; 202 with `Location` |
+| #24 | Query one instance | `InstanceResponse` projection, no stack traces |
+| #25 | List with paging and filtering | `total` ignores paging; `pageSize` capped |
+| #26 | Cancel over HTTP | `POST /cancel`, 409 on terminal |
+| #27 | RFC 9457 problem details | Stable `type` URIs, `traceId` |
+| #28 | OpenAPI document | Asserted to cover every routed endpoint |
+| #29 | Health and readiness | Liveness deliberately independent of the store |
+| #30 | List definitions | Read-only; scenario, not the title |
+
+**Found while building, not by planning:**
+
+- A malformed JSON body returned **500**, telling a client to retry against a
+  server that was working perfectly.
+- A routing 404 returned an **empty body** — clients would have received problem
+  details for some errors and nothing for others.
+- Collection routes registered as `MapGet("/")` produced paths with a trailing
+  slash that the OpenAPI document normalised away.
+
+**Scope note:** #30 is titled "register a definition over HTTP" but its scenario
+only requires listing. Definitions are C# classes registered at startup, so
+there is nothing to POST; authoring over the wire is #40's question.
+
+**Carried forward:** the API has **no authentication** (#42), cannot resume a
+suspended instance (#68), and does not expose execution history at all despite
+the engine recording it.
 
 ## M2 — original sequencing notes
 
