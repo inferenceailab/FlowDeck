@@ -250,6 +250,40 @@ Terminal states are final. Cancelling a `Completed`, `Failed` or already
 `Cancelled` instance raises `InvalidStateTransitionException` carrying `From`
 and `To`. Resuming a cancelled instance is refused for the same reason.
 
+## Surviving a restart
+
+Instances are checkpointed after every step, so a restart loses at most one
+step of progress. `ResumeAsync` reloads state from the store and recompiles the
+definition from the registry, which means **any host holding the same
+definitions can continue an instance it never started**:
+
+```csharp
+// process A
+var started = await engineA.StartAsync("approval", 1);   // suspends
+
+// process B, later, over the same store
+var resumed = await engineB.ResumeAsync(started.Id);
+```
+
+Two guarantees worth relying on:
+
+- **A completed step is never re-executed.** Side effects that already happened
+  do not happen twice.
+- **A suspended step is re-entered, not skipped.** The instance stays positioned
+  on it, so the step decides again whether it can proceed.
+
+The recovering host must have the definition registered **at the version the
+instance started on**. An instance pinned to v1 keeps running v1 even if v2 is
+also registered.
+
+Two things to know:
+
+- Workflow data and input must be serialisable — see
+  [what can be stored](#what-can-be-stored).
+- A host that dies mid-step leaves its instance in `Running`, and nothing
+  currently sweeps it back to `Suspended` (#39). Until then, such an instance
+  will not resume.
+
 ## Instance lifecycle
 
 | Status | Meaning |

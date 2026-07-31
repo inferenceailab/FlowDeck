@@ -22,8 +22,8 @@ earlier work, that is reported rather than staged as a false RED.
 | Phase 1 | Project management and security | — | ✅ Complete |
 | Phase 2 | CI/CD infrastructure | #44 | ✅ Complete |
 | **M1** | **Core Engine Primitives** | **#1–#12** | ✅ **Complete (12/12)** |
-| M2 | Persistence & Recovery | #13–#22 | Next |
-| M3 | Minimal API Surface | #23–#30 | Not started |
+| **M2** | **Persistence & Recovery** | **#13–#22** | ✅ **Complete (10/10)** |
+| M3 | Minimal API Surface | #23–#30 | Next |
 | M4 | Dashboard Skeleton | #31–#36 | Not started |
 | M5 | Retries & Error Handling | #37, #38 | Epic only |
 | M6 | Distributed Execution | #39 | Epic only |
@@ -60,7 +60,42 @@ phase.
 clause "no further steps execute" is untestable without a way to attempt
 continuation, and suspension had had no counterpart since #2.
 
-## M2 — Persistence & Recovery (next)
+## M2 — Persistence & Recovery ✅
+
+223 tests. Four stories (#14, #19, #22, and the scenario half of #15) required
+no production code — earlier work already satisfied them, and their PRs say so.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #16 | In-memory provider + conformance suite | `IWorkflowStore`; the suite is the contract |
+| #13 | Persist after every step | Engine checkpoints; API became async |
+| #14 | Resume after restart | Tests only — #13 had already enabled it |
+| #15 | Persist workflow data | `WorkflowDataSerializer`, type allow-list |
+| #18 | Append-only execution history | Engine writes history atomically with state |
+| #19 | Concurrency detection | Tests only — two defences, either may fire |
+| #22 | Crash mid-step | Tests only — modelled with a store that stops writing |
+| #20 | Purge after retention | `RetentionPolicy`, `InstancePurger` |
+| #17 | EF Core provider | Verified by the same suite, on SQLite |
+| #21 | Schema migrations | `WorkflowStoreMigrator`; ADR-0015 |
+
+**Decisions:** [ADR-0013](adr/0013-persistence-model.md) (checkpoint + history),
+[ADR-0014](adr/0014-workflow-data-serialisation.md) (serialisation),
+[ADR-0015](adr/0015-migrations-are-owned-by-the-host.md) (migrations).
+
+**Found while building, not by planning:**
+
+- A crashed instance is stuck in `Running` with no sweep to recover it (#39).
+- SQLite refuses to `ORDER BY` a `DateTimeOffset` — caught by the conformance
+  suite running against a second provider.
+- `SQLitePCLRaw` arrived transitively with a high-severity CVE; pinned.
+- A `dotnet format` violation from #14 reached `main` because I skipped the
+  format check on that story.
+
+**Carried forward:** #78 (verify EF Core against PostgreSQL, not just SQLite).
+It needs either a Docker dependency or a database, so it is a decision rather
+than a task.
+
+## M2 — original sequencing notes
 
 The milestone that makes FlowDeck real. Everything M1 built is lost on restart.
 

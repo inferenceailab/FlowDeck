@@ -1,6 +1,6 @@
 # FlowDeck — Architecture
 
-> **Status:** describes what is built as of M1. Sections marked *Planned* are
+> **Status:** describes what is built as of M2. Sections marked *Planned* are
 > not implemented. Where the current implementation is knowingly inadequate,
 > this document says so rather than describing the intended end state as if it
 > existed.
@@ -19,7 +19,7 @@ graph TB
         ENGINE["WorkflowEngine"]
         REGISTRY["WorkflowRegistry"]
         EXECUTOR["StepExecutor"]
-        STORE["IInstanceStore"]
+        STORE["IWorkflowStore"]
     end
 
     subgraph author["Author code"]
@@ -27,7 +27,7 @@ graph TB
         STEPS["IStep"]
     end
 
-    DB[("Persistence<br/><i>M2 - planned</i>")]
+    DB[("Relational database")]
 
     UI --> API
     API_CLIENT --> API
@@ -37,7 +37,7 @@ graph TB
     ENGINE --> STORE
     REGISTRY -.resolves.-> DEFS
     EXECUTOR -.invokes.-> STEPS
-    STORE -.->|M2| DB
+    STORE --> DB
 ```
 
 ## Components
@@ -52,9 +52,12 @@ graph TB
 | `WorkflowEngine` | Drives an instance through its steps | ✅ M1 |
 | `WorkflowInstance` | State of one execution | ✅ M1 |
 | `IWorkflowData` | Per-instance key-value state | ✅ M1 |
-| `IWorkflowStore` | Durable instances and history | ⚠️ in-memory provider only |
+| `IWorkflowStore` | Durable instances and history | ✅ M2 |
 | `WorkflowInstanceRecord` | Durable checkpoint form | ✅ M2 |
-| EF Core provider | Relational persistence | ❌ #17 |
+| `EfCoreWorkflowStore` | Relational persistence | ✅ M2 |
+| `WorkflowDataSerializer` | Type-tagged data serialisation | ✅ M2 |
+| `InstancePurger` | Retention sweeping | ✅ M2 |
+| `WorkflowStoreMigrator` | Schema upgrade | ✅ M2 |
 | HTTP control plane | Start, query, cancel over HTTP | ❌ M3 |
 | Dashboard | Operator UI | ❌ M4 |
 
@@ -145,11 +148,55 @@ deliberate exception is `OperationCanceledException`, which is rethrown — see
 | Different instances may execute concurrently | ✅ supported and tested |
 | Instance data is isolated per instance | ✅ enforced by construction |
 | Registry lookup is thread-safe | ✅ `ConcurrentDictionary` |
-| Instance store is thread-safe | ✅ `ConcurrentDictionary` |
+| Instance store is thread-safe | ✅ locked in-memory; transactional in EF Core |
+| A stale write is rejected rather than applied | ✅ `Revision` token, both providers |
 
 `WorkflowInstance` and `WorkflowData` are deliberately **not** thread-safe.
 A concurrent collection there would imply a guarantee the engine does not make.
 Enforcing the single-worker invariant across nodes is M6's problem (#39).
+
+## Persistence
+
+Instances are checkpointed after every step. `WorkflowInstanceRecord` is the
+authoritative state; `StepHistoryEntry` is an append-only log written in the
+same operation. Recovery reads the record and never replays history — see
+[ADR-0013](adr/0013-persistence-model.md).
+
+```mermaid
+graph LR
+    ENGINE["WorkflowEngine"] -->|"CreateAsync"| STORE["IWorkflowStore"]
+    ENGINE -->|"SaveAsync(state, history)"| STORE
+    STORE --> MEM["InMemoryWorkflowStore"]
+    STORE --> EF["EfCoreWorkflowStore"]
+    EF --> DB[("Relational database")]
+    MEM -.optional.-> SER["WorkflowDataSerializer"]
+    EF --> SER
+```
+
+| Concern | Where it is settled |
+| --- | --- |
+| Checkpoint vs event log | [ADR-0013](adr/0013-persistence-model.md) |
+| Serialising author-defined data | [ADR-0014](adr/0014-workflow-data-serialisation.md) |
+| Who owns migrations | [ADR-0015](adr/0015-migrations-are-owned-by-the-host.md) |
+| Writing a provider | [guide](guides/writing-a-persistence-provider.md) |
+
+**The conformance suite is the provider contract.** `IWorkflowStore` is only its
+signature. It runs against three configurations — in-memory, in-memory with
+serialisation, and EF Core on SQLite — and has already caught a SQLite
+`ORDER BY` incompatibility that reading the code would not have.
+
+### Recovery
+
+A restart loses nothing but the process. `ResumeAsync` loads the record and
+**recompiles steps from the registry**, so any host holding the same definitions
+can continue an instance it never started.
+
+Two properties this buys, both asserted:
+
+- **A completed step is never re-executed.** The checkpoint after advancing is
+  what NFR-1 rests on.
+- **At most one step of progress is lost** in a crash. Verified by a store that
+  stops accepting writes mid-run.
 
 ## Known limitations
 
@@ -158,14 +205,16 @@ none.
 
 | Limitation | Consequence | Tracked by |
 | --- | --- | --- |
-| Only an in-memory provider exists | All instances lost on restart | #17 |
-| Instance store is unbounded | Memory grows without limit | #20 |
-| Resume requires the definition to be registered on the recovering host | An unknown definition cannot be resumed | #67 |
+| A crashed instance is stuck in `Running` | No sweep returns it to `Suspended`, so nothing resumes it | #39 |
+| EF Core is verified against SQLite only | PostgreSQL concurrency, query plans and index use are unverified | #78 |
+| Resume requires the definition registered on the recovering host | An unknown definition cannot be resumed | #67 |
 | No retry | Any step failure is terminal | #37 |
 | No compensation | Partial work is not undone on failure | #38 |
 | Single node only | No multi-node coordination exists | #39 |
+| Only cancel exists as an operator action | No retry, re-run, or bulk actions | #66 |
+| Resume is not exposed over HTTP or the dashboard | A suspended workflow is only completable in-process | #68 |
 | No authentication | Anything reachable can start workflows | #42 |
-| CodeQL analyses nothing | Detected `languages: []` before code existed | revisit |
+| Nothing has been verified by CI | No self-hosted runner is registered; all results are local | — |
 
 ## Technology
 
