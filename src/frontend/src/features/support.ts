@@ -20,6 +20,12 @@ export const anInstance = (overrides: Partial<Instance> = {}): Instance => ({
   failedStepName: null,
   errorType: null,
   errorMessage: null,
+  ownerNodeId: null,
+  leaseExpiresAt: null,
+
+  // Computed server-side, so a scenario sets it rather than deriving it from a
+  // timestamp the browser would compare against its own clock.
+  awaitingRecovery: false,
   ...overrides,
 });
 

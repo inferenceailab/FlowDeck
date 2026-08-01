@@ -24,12 +24,41 @@ public sealed record InstanceResponse(
     DateTimeOffset? CompletedAt,
     string? FailedStepName,
     string? ErrorType,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    string? OwnerNodeId,
+    DateTimeOffset? LeaseExpiresAt)
 {
-    /// <summary>Projects an engine instance for the wire.</summary>
-    public static InstanceResponse From(WorkflowInstance instance)
+    /// <summary>
+    /// Whether this instance is <c>Running</c> with a lease that has lapsed.
+    /// </summary>
+    /// <remarks>
+    /// Computed server-side rather than left to each client, so every consumer
+    /// agrees — and because the comparison is against the server's clock, which
+    /// is the same one the nodes judge expiry with. A browser deciding this for
+    /// itself would disagree with the cluster whenever the two clocks differ.
+    ///
+    /// <para>
+    /// A <c>Running</c> instance with a lapsed lease is not running anywhere.
+    /// It is waiting for some node's dispatcher to notice it, and looking
+    /// identical to a healthy one is how it goes unnoticed.
+    /// </para>
+    /// </remarks>
+    public bool AwaitingRecovery { get; init; }
+
+    /// <summary>
+    /// Projects an engine instance for the wire, judging lease expiry against
+    /// the host's clock.
+    /// </summary>
+    /// <remarks>
+    /// The clock is passed in rather than taken from
+    /// <see cref="TimeProvider.System"/>, so the API, the engine and the
+    /// dispatcher all judge time the same way. Two of them disagreeing about
+    /// what has lapsed is exactly the confusion this field exists to remove.
+    /// </remarks>
+    public static InstanceResponse From(WorkflowInstance instance, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(instance);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         return new InstanceResponse(
             instance.Id,
@@ -42,7 +71,14 @@ public sealed record InstanceResponse(
             instance.CompletedAt,
             instance.FailedStepName,
             instance.ErrorType,
-            instance.ErrorMessage);
+            instance.ErrorMessage,
+            instance.OwnerNodeId,
+            instance.LeaseExpiresAt)
+        {
+            AwaitingRecovery = instance.Status == InstanceStatus.Running
+                && instance.LeaseExpiresAt is { } expiry
+                && expiry <= timeProvider.GetUtcNow(),
+        };
     }
 }
 
@@ -200,13 +236,14 @@ public static class InstanceEndpoints
     private static async Task<Accepted<InstanceResponse>> CancelAsync(
         Guid instanceId,
         WorkflowEngine engine,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",
-            InstanceResponse.From(instance));
+            InstanceResponse.From(instance, timeProvider));
     }
 
     /// <summary>
@@ -219,6 +256,7 @@ public static class InstanceEndpoints
     /// </remarks>
     private static async Task<Ok<InstancePage>> ListAsync(
         WorkflowEngine engine,
+        TimeProvider timeProvider,
         InstanceStatus? status = null,
         string? definitionId = null,
         int page = 1,
@@ -243,7 +281,7 @@ public static class InstanceEndpoints
         var total = await engine.CountInstancesAsync(filter, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Ok(new InstancePage(
-            [.. instances.Select(InstanceResponse.From)],
+            [.. instances.Select(instance => InstanceResponse.From(instance, timeProvider))],
             total,
             page,
             pageSize));
@@ -261,6 +299,7 @@ public static class InstanceEndpoints
     private static async Task<Ok<InstanceResponse>> GetAsync(
         Guid instanceId,
         WorkflowEngine engine,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken = default)
     {
         // GetInstanceAsync throws InstanceNotFoundException, which the handler
@@ -268,6 +307,6 @@ public static class InstanceEndpoints
         // duplicate the mapping in a second place.
         var instance = await engine.GetInstanceAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
-        return TypedResults.Ok(InstanceResponse.From(instance));
+        return TypedResults.Ok(InstanceResponse.From(instance, timeProvider));
     }
 }

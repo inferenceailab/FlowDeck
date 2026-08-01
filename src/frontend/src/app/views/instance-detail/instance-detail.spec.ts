@@ -30,6 +30,9 @@ describe('InstanceDetail', () => {
     failedStepName: null,
     errorType: null,
     errorMessage: null,
+ownerNodeId: null,
+leaseExpiresAt: null,
+awaitingRecovery: false,
     ...overrides,
   });
 

@@ -30,6 +30,9 @@ describe('InstanceDetail cancellation', () => {
     failedStepName: null,
     errorType: null,
     errorMessage: null,
+ownerNodeId: null,
+leaseExpiresAt: null,
+awaitingRecovery: false,
   });
 
   const button = (selector: string): HTMLButtonElement =>

@@ -311,3 +311,15 @@ h2 {
   padding: 0.85rem 1rem;
   border-radius: var(--radius);
 }
+
+/*
+  Awaiting recovery. Deliberately calmer than the failure summary: nothing is
+  broken and nobody needs to act, so it informs rather than interrupts.
+*/
+.recovery-notice {
+  border: 1px solid var(--status-suspended);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--status-suspended) 8%, transparent);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}

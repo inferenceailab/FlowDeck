@@ -112,6 +112,18 @@
             <dd>{{ instance()!.currentStepName }}</dd>
           </div>
         }
+
+        <!--
+          Only when a node holds it. A row reading "Running on —" invites the
+          question of which node that is, and the answer is that nobody is
+          running it, which the row does not say.
+        -->
+        @if (instance()!.ownerNodeId) {
+          <div class="instance-owner">
+            <dt i18n>Running on</dt>
+            <dd>{{ instance()!.ownerNodeId }}</dd>
+          </div>
+        }
       </dl>
 
       <!--
@@ -119,6 +131,25 @@
         opening this view after an alert wants the answer first and the evidence
         second.
       -->
+      <!--
+        A Running instance whose lease has lapsed is not running anywhere. It
+        is waiting for some node's dispatcher to notice it, and looking
+        identical to a healthy one is how it goes unnoticed.
+
+        role="status" rather than "alert": nothing is broken and nobody needs
+        to act. Interrupting for this would train an operator to ignore the
+        alerts that do matter.
+      -->
+      @if (instance()!.awaitingRecovery) {
+        <div class="recovery-notice" role="status">
+          <p i18n>
+            This instance is <strong>awaiting recovery</strong>. The node running
+            it ({{ instance()!.ownerNodeId }}) stopped renewing its lease, and
+            another node will pick the work up.
+          </p>
+        </div>
+      }
+
       <!--
         Shown for every status where a step failed, not only Failed. A
         compensated instance still broke, and the rollback is what the engine
