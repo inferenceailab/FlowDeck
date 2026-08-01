@@ -85,6 +85,56 @@ public interface IWorkflowStore
     Task<int> CountAsync(InstanceFilter filter, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Counts the instances still running each definition version.
+    /// </summary>
+    /// <remarks>
+    /// One call rather than a <see cref="CountAsync"/> per registered version.
+    /// A host with fifty versions would otherwise make fifty round trips on a
+    /// page an operator reloads, and the answer is a single grouped query in
+    /// every provider that has one.
+    ///
+    /// <para>
+    /// Versions nothing is running are absent rather than reported as zero. The
+    /// store knows what ran; only the registry knows what is <i>registered</i>,
+    /// and inventing rows for versions it has never seen would be the store
+    /// answering a question it cannot.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The default implementation is correct but not efficient</b>: it lists
+    /// the active instances and groups them here. Both shipped providers
+    /// override it with a grouped query, and a provider that cares about the
+    /// page an operator reloads should too.
+    /// </para>
+    ///
+    /// <para>
+    /// A default at all, rather than a plain member, because eleven test doubles
+    /// implement this interface by delegating to an inner store. Forcing each to
+    /// hand-write a method it does not care about would add eleven copies of the
+    /// same line and make the next addition worse - and a default that is right
+    /// and slow is a better trade than a contract nobody wants to extend.
+    /// </para>
+    /// </remarks>
+    async Task<IReadOnlyList<DefinitionUsage>> CountActiveByDefinitionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var active = await this.ListAsync(new InstanceFilter { ActiveOnly = true }, cancellationToken)
+            .ConfigureAwait(false);
+
+        return
+        [
+            .. active
+                .GroupBy(record => (record.DefinitionId, record.DefinitionVersion))
+                .Select(group => new DefinitionUsage(
+                    group.Key.DefinitionId,
+                    group.Key.DefinitionVersion,
+                    group.Count()))
+                .OrderBy(entry => entry.DefinitionId, StringComparer.Ordinal)
+                .ThenBy(entry => entry.DefinitionVersion),
+        ];
+    }
+
+    /// <summary>
     /// Deletes terminal instances that reached their final state before
     /// <paramref name="completedBefore"/>, together with their history.
     /// </summary>

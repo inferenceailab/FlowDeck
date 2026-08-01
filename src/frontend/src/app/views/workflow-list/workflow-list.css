@@ -1,0 +1,108 @@
+h1 {
+  font-size: 1.35rem;
+  margin: 0 0 1rem;
+}
+
+.workflows {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Read by screen readers and hidden from nobody. A table describing what it
+  contains costs one line and saves an operator working it out from headers.
+*/
+.workflows caption {
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 0 0.75rem 0.75rem;
+}
+
+.workflows th {
+  text-align: left;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.workflows tbody th {
+  font-size: 1rem;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+.workflows td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.workflows tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+/*
+  A version something is still running gets a tint and a left border, on top of
+  a cell that already says so in words. Colour is never the only signal
+  (ADR-0016) - delete this rule and the table still answers the question.
+*/
+.row-in-use {
+  background: color-mix(in srgb, var(--status-running) 8%, transparent);
+  box-shadow: inset 3px 0 0 var(--status-running);
+}
+
+.row-in-use:hover {
+  background: color-mix(in srgb, var(--status-running) 14%, transparent);
+}
+
+.usage-busy {
+  color: var(--status-running);
+}
+
+.usage-free {
+  color: var(--text-muted);
+}
+
+.workflows a {
+  color: var(--accent);
+}
+
+.workflows a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.state {
+  padding: 1rem;
+  color: var(--text-muted);
+}
+
+.state p {
+  margin: 0 0 0.5rem;
+}
+
+.state-error {
+  border: 1px solid var(--status-failed);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.state-error button {
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.state-error button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

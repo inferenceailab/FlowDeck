@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { WorkflowDefinitionDetail } from './models';
+import { WorkflowDefinition, WorkflowDefinitionDetail } from './models';
 
 /**
  * Reads registered workflow definitions.
@@ -13,6 +13,17 @@ import { WorkflowDefinitionDetail } from './models';
 @Injectable({ providedIn: 'root' })
 export class WorkflowService {
   private readonly http = inject(HttpClient);
+
+  /**
+   * Every registered definition, with how many instances still run each.
+   *
+   * The live count is what an operator reads before retiring a version, and it
+   * counts the same thing the engine refuses on - a screen disagreeing with
+   * what the engine allows would be worse than no screen.
+   */
+  list(): Observable<WorkflowDefinition[]> {
+    return this.http.get<WorkflowDefinition[]>('/api/workflows');
+  }
 
   /**
    * Describes one definition: the steps it declares and the branches leaving

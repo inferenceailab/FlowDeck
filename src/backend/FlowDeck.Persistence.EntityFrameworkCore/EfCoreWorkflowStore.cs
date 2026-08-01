@@ -188,6 +188,37 @@ public sealed class EfCoreWorkflowStore(
         return [.. rows.Select(this.ToRecord)];
     }
 
+    public async Task<IReadOnlyList<DefinitionUsage>> CountActiveByDefinitionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = contextFactory();
+
+        // Grouped in the database, not in memory. Pulling every active record
+        // back to count them would make an operator's page cost proportional to
+        // how busy the engine is, which is exactly backwards.
+        var grouped = await context.Instances
+            .AsNoTracking()
+            .Where(instance =>
+                instance.Status == InstanceStatus.Running || instance.Status == InstanceStatus.Suspended)
+            .GroupBy(instance => new { instance.DefinitionId, instance.DefinitionVersion })
+            .Select(group => new
+            {
+                group.Key.DefinitionId,
+                group.Key.DefinitionVersion,
+                Active = group.Count(),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return
+        [
+            .. grouped
+                .Select(entry => new DefinitionUsage(entry.DefinitionId, entry.DefinitionVersion, entry.Active))
+                .OrderBy(entry => entry.DefinitionId, StringComparer.Ordinal)
+                .ThenBy(entry => entry.DefinitionVersion),
+        ];
+    }
+
     public async Task<int> CountAsync(InstanceFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);

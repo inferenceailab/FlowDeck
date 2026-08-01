@@ -1,4 +1,5 @@
 using FlowDeck.Core;
+using FlowDeck.Core.Persistence;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace FlowDeck.Api;
@@ -24,7 +25,19 @@ public sealed record StartInstanceResponse(Guid InstanceId, InstanceStatus Statu
 /// it takes none. The name only - not a schema, and never an assembly-qualified
 /// name, which would tell a caller more about the deployment than it needs.
 /// </param>
-public sealed record WorkflowDefinitionResponse(string Id, int Version, string? InputTypeName);
+/// <param name="ActiveInstances">
+/// How many non-terminal instances are still running this exact version.
+/// </param>
+/// <remarks>
+/// <c>ActiveInstances</c> is what an operator reads before retiring a version,
+/// and it counts the same thing the engine refuses on (ADR-0026) - a screen
+/// disagreeing with what the engine will allow would be worse than no screen.
+/// </remarks>
+public sealed record WorkflowDefinitionResponse(
+    string Id,
+    int Version,
+    string? InputTypeName,
+    int ActiveInstances);
 
 /// <summary>
 /// One branch leaving a step, as the API describes it.
@@ -202,16 +215,33 @@ public static class WorkflowEndpoints
     /// and #183 is where authoring over the wire would be decided.
     /// </para>
     /// </remarks>
-    private static Task<Ok<WorkflowDefinitionResponse[]>> ListDefinitionsAsync(WorkflowRegistry registry)
+    private static async Task<Ok<WorkflowDefinitionResponse[]>> ListDefinitionsAsync(
+        WorkflowRegistry registry,
+        IWorkflowStore store,
+        CancellationToken cancellationToken)
     {
+        // One grouped query, not one count per registered version. A host with
+        // fifty versions would otherwise make fifty round trips on a page an
+        // operator reloads.
+        var usage = await store.CountActiveByDefinitionAsync(cancellationToken).ConfigureAwait(false);
+
+        var active = usage.ToDictionary(
+            entry => (entry.DefinitionId, entry.DefinitionVersion),
+            entry => entry.ActiveInstances);
+
         var definitions = registry.GetAll()
             .Select(definition => new WorkflowDefinitionResponse(
                 definition.Id,
                 definition.Version,
-                definition.InputType?.Name))
+                definition.InputType?.Name,
+
+                // Zero for a version nothing is running. The store omits those
+                // rows because it cannot know what is registered; the registry
+                // is what turns an absence into a zero.
+                active.GetValueOrDefault((definition.Id, definition.Version))))
             .ToArray();
 
-        return Task.FromResult(TypedResults.Ok(definitions));
+        return TypedResults.Ok(definitions);
     }
 
     /// <summary>

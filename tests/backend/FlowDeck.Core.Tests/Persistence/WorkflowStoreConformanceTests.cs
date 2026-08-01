@@ -658,6 +658,30 @@ public abstract class WorkflowStoreConformanceTests
     }
 
     [SkippableFact]
+    public async Task Active_instances_are_grouped_by_definition_and_version()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(definitionId: "order", definitionVersion: 1));
+        await store.CreateAsync(NewRecord(definitionId: "order", definitionVersion: 1, status: InstanceStatus.Suspended));
+        await store.CreateAsync(NewRecord(definitionId: "order", definitionVersion: 2));
+        await store.CreateAsync(NewRecord(definitionId: "shipment", definitionVersion: 1));
+
+        // Terminal, so it must not appear at all - not as a zero row and not
+        // folded into v1's count.
+        await store.CreateAsync(NewRecord(definitionId: "order", definitionVersion: 3, status: InstanceStatus.Completed));
+
+        var usage = await store.CountActiveByDefinitionAsync();
+
+        Assert.Equal(
+            [
+                new DefinitionUsage("order", 1, 2),
+                new DefinitionUsage("order", 2, 1),
+                new DefinitionUsage("shipment", 1, 1),
+            ],
+            usage);
+    }
+
+    [SkippableFact]
     public async Task Listing_pages_with_skip_and_take()
     {
         var store = await this.CreateStoreAsync();

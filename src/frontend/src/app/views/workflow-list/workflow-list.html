@@ -1,0 +1,75 @@
+<h1 i18n>Workflows</h1>
+
+<div aria-live="polite" [attr.aria-busy]="state().kind === 'loading'">
+  @switch (state().kind) {
+    @case ('loading') {
+      <p class="state state-loading" i18n>Loading workflows…</p>
+    }
+
+    @case ('error') {
+      <div class="state state-error" role="alert">
+        <p><strong i18n>Could not load the workflows.</strong></p>
+        <p class="state-detail">{{ errorMessage() }}</p>
+        <button type="button" (click)="load()" i18n>Try again</button>
+      </div>
+    }
+
+    @case ('ready') {
+      @if (definitions().length === 0) {
+        <p class="state state-empty" i18n>
+          This host has no workflow definitions registered.
+        </p>
+      } @else {
+        <table class="workflows">
+          <caption i18n>
+            Registered workflow definitions, and how many instances are still running each.
+          </caption>
+
+          <thead>
+            <tr>
+              <th scope="col" i18n>Workflow</th>
+              <th scope="col" i18n>Version</th>
+              <th scope="col" i18n>Input</th>
+              <th scope="col" i18n>Running now</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (definition of definitions(); track definition.id + '@' + definition.version) {
+              <tr class="workflow-row" [class.row-in-use]="inUse(definition)">
+                <th scope="row">
+                  <a [routerLink]="['/workflows', definition.id]">{{ definition.id }}</a>
+                </th>
+
+                <td>v{{ definition.version }}</td>
+
+                <!--
+                  "Takes nothing" rather than an empty cell, so a reader can
+                  tell the difference between a workflow with no input and a
+                  column that failed to render.
+                -->
+                <td>{{ definition.inputTypeName ?? 'Takes nothing' }}</td>
+
+                <td class="workflow-usage">
+                  <!--
+                    In words as well as a number, and the words are what an
+                    operator is actually asking: can I remove this. Retirement
+                    is refused while anything holds a version, so a count of
+                    zero and "safe to retire" are the same fact (ADR-0026).
+                  -->
+                  @if (inUse(definition)) {
+                    <span class="usage-busy" i18n
+                      >{{ count(definition) }} still running — cannot be retired</span
+                    >
+                  } @else {
+                    <span class="usage-free" i18n>None — safe to retire</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    }
+  }
+</div>
