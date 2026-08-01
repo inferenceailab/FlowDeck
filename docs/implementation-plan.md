@@ -29,8 +29,9 @@ earlier work, that is reported rather than staged as a false RED.
 | **M6** | **Distributed Execution** | **#39, #143–#150** | ✅ **Complete (9/9)** |
 | **M7** | **Branching, Parallel Execution & Visualisation** | **#40, #161–#167, #171, #172, #181** | ✅ **Complete (11/11)** |
 | **M8** | **Observability** | **#41, #185–#190** | ✅ **Complete (7/7)** |
-| M9 | Production Hardening | #42, #43, #67 | Epic only |
+| **M9** | **Production Hardening** | **#43, #67, #202–#207** | ✅ **Complete (8/8)** |
 | M10 | Operator Control | #66, #68, #124, #179 | Epic only |
+| M11 | Authentication & Authorisation | #42 | Epic only |
 
 M1–M4 together form one vertical slice: define a workflow in C# → execute it →
 survive a restart → drive it over HTTP → watch it in a dashboard.
@@ -391,6 +392,62 @@ anything.
 counters (#199) and cluster health (#200) are all deferred with reasons recorded
 rather than left off a list nobody wrote. `/metrics` is unauthenticated like the
 rest of the API (#42).
+
+## M9 — Production Hardening ✅
+
+**Authentication was deferred.** #42 moved to a new M11 at the maintainer's
+direction, so this milestone is the version lifecycle (#67) and the tenancy and
+performance questions (#43). That is worth stating plainly: a milestone called
+Production Hardening that ships without auth is hardening in a narrower sense
+than the name suggests.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #67 | Version lifecycle epic | [ADR-0026](adr/0026-definition-version-lifecycle.md) |
+| #43 | Tenancy and performance epic | [ADR-0027](adr/0027-multi-tenancy-and-performance.md) |
+| #202 | Filter and count by version | `InstanceFilter.DefinitionVersion`, `ActiveOnly` |
+| #203 | Refuse to retire a held version | `RetireAsync`; `DefinitionInUseException` carries the count |
+| #204 | Two versions side by side | Characterization — no production code needed |
+| #205 | Show which versions are in use | Grouped count; the workflow list stops being a placeholder |
+| #206 | Throughput baseline | [Performance baseline](performance.md); a loose regression guard |
+| #207 | Version lifecycle documented | Prose asserted, bounded to its own section |
+
+**The decisions.** In-flight instances run to completion on the version they
+started — no migration, no patching API — and the cost is stated rather than
+implied: *a bug in a deployed version stays in that version*. Retiring a version
+instances still hold is refused, and the refusal says how many. Multi-tenancy is
+out of scope for v1 as a recorded decision. Performance is a measured baseline
+with a loose guard, not a target.
+
+**Found while building, not by planning:**
+
+- **The hazard #203 closes was already live.** A host that simply stopped
+  registering a version left every in-flight instance of it unresumable, because
+  `ResumeAsync` and the dispatcher both resolve through the registry. Nothing
+  reported it, and an operator would find out days later when a recovery failed.
+- **A scenario was passing for the wrong reason.** `EngineContext` keyed
+  declarations by id alone, so #203's "retiring one version leaves the others
+  alone" registered only v2 — retiring v1 failed as *not found*, and the
+  assertion that v2 still worked was true for unrelated reasons. Found by #204,
+  which needed two versions to exist at once.
+- **Widening `IWorkflowStore` costs eleven test doubles.** They implement it by
+  delegating to an inner store, so a new member breaks all of them. The grouped
+  count ships as a **default interface member** — correct but unoptimised, with
+  both providers overriding it — because a contract nobody wants to extend is a
+  worse outcome than a default that is right and slow.
+- **The per-step cost assertion is the interesting half of #206.** A ten-step
+  instance costs ~4 µs per step against a one-step instance's ~12 µs, because
+  creation is paid once and spread. If that stops amortising, something has
+  started scaling with step count — a regression the headline number would hide.
+
+**Honest limitation:** the performance guard is ~2,700× below the measured rate.
+It catches an order-of-magnitude regression and **will not catch a 2×**. That is
+the trade for running on shared runners, where a flaky guard gets deleted rather
+than investigated, and `performance.md` says so.
+
+**Carried forward:** no migration for in-flight instances (#67 stays open as the
+epic covering it), multi-tenancy out of scope (ADR-0027), and the API still has
+no authentication (#42, now M11).
 
 ## M2 — original sequencing notes
 
