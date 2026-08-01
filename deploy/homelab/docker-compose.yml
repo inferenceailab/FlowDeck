@@ -22,6 +22,16 @@ services:
       # "Running on" field mean something to an operator.
       FlowDeck__Cluster__NodeId: ${NODE_ID:-homelab}
 
+      # Where to send traces, if anywhere. Empty by default and the tracing
+      # pipeline is then not built at all - a homelab with no collector should
+      # not run an exporter retrying into the void (ADR-0025 decision 4).
+      #
+      # Metrics need none of this: /metrics is always served, so a Prometheus
+      # that already exists can scrape this container with no extra service
+      # here.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTLP_PROTOCOL:-grpc}
+
     # Readiness, not liveness. A node whose store is unreachable is running
     # correctly and cannot serve, so it should leave rotation rather than be
     # restarted - restarting it during a database outage produces a restart

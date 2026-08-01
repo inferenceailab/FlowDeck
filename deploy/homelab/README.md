@@ -20,6 +20,28 @@ artefact CI verified.
 | `IMAGE_TAG` | `latest` | Usually the commit SHA CD built |
 | `WEB_PORT` | `8080` | Host port the dashboard listens on |
 | `NODE_ID` | `homelab` | This node's identity while it holds a lease |
+| `OTLP_ENDPOINT` | *(empty)* | Where to send traces. Empty means tracing is not wired at all |
+| `OTLP_PROTOCOL` | `grpc` | `grpc` or `http/protobuf` |
+
+## Observability
+
+**Metrics need no configuration and no extra container.** The API serves
+`/metrics` in Prometheus text exposition format, always. A Prometheus that
+already exists can scrape it; one that does not is not a reason for FlowDeck to
+count nothing.
+
+**Tracing is opt-in**, because there is nothing sensible to do with a trace when
+there is nowhere to send it. Leave `OTLP_ENDPOINT` empty and the pipeline is not
+built — no exporter, no retries, no logs about a collector nobody asked for. Set
+it and the API exports its request spans together with FlowDeck's instance and
+step spans, so a slow endpoint and the step responsible appear in one trace.
+
+Neither carries workflow data: ids, names, statuses and durations only. A span
+leaves the process for a backend that may be third-party, so this is a boundary
+rather than a default ([ADR-0025](../../docs/adr/0025-observability.md)).
+
+`/metrics` is unauthenticated, like the rest of the API (#42). It exposes
+definition ids and counts.
 
 ## Why `NODE_ID` is set
 

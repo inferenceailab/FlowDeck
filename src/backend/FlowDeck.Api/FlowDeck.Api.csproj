@@ -8,6 +8,28 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
+
+    <!--
+      Tracing export, and only here: FlowDeck.Core emits through the BCL and
+      takes no OpenTelemetry dependency, because a library that hard-wires its
+      own exporter has decided something belonging to whoever hosts it
+      (ADR-0025 decision 1). This project is a deployable, not a library.
+
+      Both stable at 1.17.0. The Prometheus exporter is deliberately absent -
+      it has never shipped anything but a prerelease, so /metrics is rendered
+      by hand instead (ADR-0025 decision 4). Re-implementing OTLP would be the
+      reckless version of the same judgement, so that one is a package.
+    -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+
+    <!--
+      The request side of "one trace". Not a convenience: the default sampler is
+      ParentBased, so a workflow span whose parent is an unrecorded request
+      activity is not recorded either - and nothing is exported at all. Found by
+      a scenario that stood up a real collector and received nothing.
+    -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
   </ItemGroup>
 
   <PropertyGroup>

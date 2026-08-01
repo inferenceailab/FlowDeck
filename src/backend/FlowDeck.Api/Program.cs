@@ -4,6 +4,8 @@ using FlowDeck.Core.Cluster;
 using FlowDeck.Core.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -95,7 +97,69 @@ builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks()
     .AddCheck<WorkflowStoreHealthCheck>("workflow-store", tags: ["ready"]);
 
+// Scraped, always. The homelab runs two containers and no collector, so metrics
+// that appeared only once an operator had built an observability stack would
+// leave the default deployment observing nothing (ADR-0025 decision 4).
+builder.Services.AddSingleton(provider =>
+    new PrometheusExposition(provider.GetRequiredService<EngineMetrics>()));
+
+// Tracing is the opposite: wired only when there is somewhere to send it.
+// Standard OTEL_ variable first, so an operator configures FlowDeck the way
+// they configure everything else; the FlowDeck: section is there for a host
+// that keeps its settings in one file.
+var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
+    ?? builder.Configuration["FlowDeck:Otlp:Endpoint"];
+
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    // gRPC by default, which is what the OTLP specification says and what a
+    // collector on 4317 expects. Overridable because a homelab behind a proxy
+    // that only speaks HTTP/1.1 is a real deployment, and the alternative is
+    // telling that operator their traces cannot be exported.
+    var protocol = builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"] switch
+    {
+        "http/protobuf" => OtlpExportProtocol.HttpProtobuf,
+        _ => OtlpExportProtocol.Grpc,
+    };
+
+    var target = new Uri(otlpEndpoint);
+
+    // OTEL_EXPORTER_OTLP_ENDPOINT is a *base* endpoint: the OTLP specification
+    // says an http/protobuf exporter appends the signal's path to it, and a
+    // collector's documented address is the base. The SDK does that appending
+    // only for endpoints it read from the environment itself - one set through
+    // OtlpExporterOptions is taken literally - so setting it here means doing
+    // it here. Without this, every export POSTs to the collector's root and is
+    // silently 404'd.
+    if (protocol == OtlpExportProtocol.HttpProtobuf && target.AbsolutePath is "/" or "")
+    {
+        target = new Uri(target, "v1/traces");
+    }
+
+    builder.Services.AddOpenTelemetry()
+        .WithTracing(tracing => tracing
+            .AddSource(EngineTracing.SourceName)
+
+            // The request half of the trace #188 exists to produce, and a
+            // correctness requirement rather than a nicety: the default sampler
+            // is ParentBased, so a workflow span whose parent is an unrecorded
+            // request activity is not recorded either and nothing reaches the
+            // collector at all.
+            .AddAspNetCoreInstrumentation()
+            .AddOtlpExporter(otlp =>
+            {
+                otlp.Endpoint = target;
+                otlp.Protocol = protocol;
+            }));
+}
+
 var app = builder.Build();
+
+// Resolved now rather than on the first scrape. The exposition is a
+// MeterListener, so one created lazily would have missed every measurement
+// recorded before somebody first called /metrics - and the first scrape after
+// a deploy would under-report exactly the runs an operator was checking on.
+_ = app.Services.GetRequiredService<PrometheusExposition>();
 
 app.UseExceptionHandler();
 
@@ -121,6 +185,13 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 // homelab behind the operator's own network boundary, and a description a
 // client cannot fetch from the running server is a description that goes stale.
 app.MapOpenApi();
+
+// Prometheus text format, rendered by hand from FlowDeck's own meter. Outside
+// the OpenAPI document deliberately: it is scraped by a collector that knows
+// the exposition format, not called by a generated client.
+app.MapGet("/metrics", (PrometheusExposition exposition) =>
+        Results.Text(exposition.Render(), PrometheusExposition.ContentType))
+    .ExcludeFromDescription();
 
 app.MapWorkflowEndpoints();
 app.MapInstanceEndpoints();
