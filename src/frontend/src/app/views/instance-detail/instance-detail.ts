@@ -3,17 +3,11 @@ import { Component, OnInit, computed, inject, input, signal } from '@angular/cor
 import { forkJoin } from 'rxjs';
 import { InstanceService } from '../../api/instance.service';
 import { LoadState, describeHttpError, failed, loading, ready } from '../../api/load-state';
-import { Instance, StepHistoryEntry, isTerminal } from '../../api/models';
+import { Instance, StepHistoryEntry, WorkflowDefinitionDetail, isTerminal } from '../../api/models';
+import { WorkflowService } from '../../api/workflow.service';
 import { StatusBadge } from '../../components/status-badge/status-badge';
-
-/**
- * How the engine names a compensating action in history (ADR-0021).
- *
- * A prefix rather than a separate field, so the contract is one string both
- * sides agree on. Declared once here rather than inline, because a typo in a
- * `startsWith` would silently classify every rollback as an ordinary step.
- */
-const ROLLBACK_PREFIX = 'compensate:';
+import { WorkflowShape } from '../../components/workflow-shape/workflow-shape';
+import { ROLLBACK_PREFIX, runMarks } from './run-marks';
 
 /** An instance together with its execution history. */
 interface InstanceDetailData {
@@ -29,12 +23,13 @@ interface InstanceDetailData {
  */
 @Component({
   selector: 'app-instance-detail',
-  imports: [DatePipe, DecimalPipe, StatusBadge],
+  imports: [DatePipe, DecimalPipe, StatusBadge, WorkflowShape],
   templateUrl: './instance-detail.html',
   styleUrl: './instance-detail.css',
 })
 export class InstanceDetail implements OnInit {
   private readonly instances = inject(InstanceService);
+  private readonly workflows = inject(WorkflowService);
 
   /** Bound from the route parameter. */
   readonly instanceId = input.required<string>();
@@ -57,6 +52,33 @@ export class InstanceDetail implements OnInit {
     const state = this.state();
 
     return state.kind === 'error' ? state.message : '';
+  });
+
+  /**
+   * The shape the instance is running, once it has arrived.
+   *
+   * A second round trip, chained off the instance: the definition id and
+   * version are not in the route, so nothing can ask for the shape until the
+   * instance says which one it is running.
+   */
+  protected readonly shape = signal<WorkflowDefinitionDetail | null>(null);
+
+  /**
+   * Whether the shape could not be fetched.
+   *
+   * Held apart from {@link state}, because the shape is supplementary and the
+   * timeline is what an operator opened this view for. Folding this into the
+   * view's load state would answer "which step failed?" with "could not load
+   * this instance", which would be both unhelpful and untrue.
+   */
+  protected readonly shapeUnavailable = signal(false);
+
+  /** What the run did to each step of the shape, or null with no shape. */
+  protected readonly marks = computed(() => {
+    const shape = this.shape();
+    const instance = this.instance();
+
+    return shape && instance ? runMarks(shape.steps, this.history(), instance) : null;
   });
 
   /** Whether the confirmation prompt is showing. */
@@ -127,6 +149,8 @@ export class InstanceDetail implements OnInit {
 
   protected load(): void {
     this.state.set(loading());
+    this.shape.set(null);
+    this.shapeUnavailable.set(false);
 
     // Both in one go. Fetching sequentially would show the instance and then
     // pop the timeline in a moment later, which reads as a second load rather
@@ -135,8 +159,29 @@ export class InstanceDetail implements OnInit {
       instance: this.instances.get(this.instanceId()),
       history: this.instances.history(this.instanceId()),
     }).subscribe({
-      next: (data) => this.state.set(ready(data)),
+      next: (data) => {
+        this.state.set(ready(data));
+        this.loadShape(data.instance);
+      },
       error: (error: unknown) => this.state.set(failed(describeHttpError(error))),
+    });
+  }
+
+  /**
+   * Fetches the shape this run is running, at the version it started on.
+   *
+   * Pinned to `definitionVersion` rather than taking the latest. A run belongs
+   * to the version it began under, and drawing it against a newer shape would
+   * put its history on steps it never had - or silently drop steps it did.
+   *
+   * A failure costs the shape and nothing else. An in-flight instance whose
+   * version has since left the registry is exactly the case an operator most
+   * needs the timeline for.
+   */
+  private loadShape(instance: Instance): void {
+    this.workflows.get(instance.definitionId, Number(instance.definitionVersion)).subscribe({
+      next: (definition) => this.shape.set(definition),
+      error: () => this.shapeUnavailable.set(true),
     });
   }
 

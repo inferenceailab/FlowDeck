@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { WorkflowDefinitionDetail } from './models';
@@ -18,12 +18,14 @@ export class WorkflowService {
    * Describes one definition: the steps it declares and the branches leaving
    * them.
    *
-   * No version parameter. The API defaults to the latest registered, which is
-   * the shape an operator means when they ask what a workflow does; reading an
-   * older version is for an in-flight instance, and nothing in the dashboard
-   * asks for that yet.
+   * @param version The version to describe, or omitted for the latest
+   * registered. Omitting it is what an operator means when they ask what a
+   * workflow does; a *run* is pinned to the version it started on, and drawing
+   * it against a newer shape would put its history on steps it never had (#181).
    */
-  get(definitionId: string): Observable<WorkflowDefinitionDetail> {
-    return this.http.get<WorkflowDefinitionDetail>(`/api/workflows/${definitionId}`);
+  get(definitionId: string, version?: number): Observable<WorkflowDefinitionDetail> {
+    const params = version === undefined ? undefined : new HttpParams().set('version', version);
+
+    return this.http.get<WorkflowDefinitionDetail>(`/api/workflows/${definitionId}`, { params });
   }
 }

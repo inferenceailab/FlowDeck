@@ -1,0 +1,136 @@
+/*
+  Numbered, because the number is the point: it is the order the engine runs
+  them in. The counter is drawn by the list itself rather than by content
+  injected in CSS, so a screen reader announces the position too.
+*/
+.shape {
+  list-style: decimal;
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.shape-step {
+  margin: 0.35rem 0;
+}
+
+.step-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.step-name {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+/*
+  Every badge carries a word, never a colour or glyph alone (ADR-0016). Roughly
+  one in twelve men has a colour vision deficiency, and "this step is where the
+  run broke" is not a thing to encode in a hue.
+*/
+.step-retry,
+.step-undo,
+.step-mark,
+.branch-mark,
+.branch-condition {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+/*
+  The run marks, coloured to match the status badges an operator already reads
+  elsewhere in the dashboard. The colour is a second signal on top of the word,
+  never the only one - remove every rule below and the shape still says what
+  happened.
+*/
+.step-mark[data-mark='ran'] {
+  border-color: var(--status-completed);
+  color: var(--status-completed);
+}
+
+.step-mark[data-mark='running'] {
+  border-color: var(--status-running);
+  color: var(--status-running);
+}
+
+.step-mark[data-mark='failed'] {
+  border-color: var(--status-failed);
+  color: var(--status-failed);
+}
+
+.step-mark[data-mark='undone'] {
+  border-color: var(--status-compensated);
+  color: var(--status-compensated);
+}
+
+.step-mark[data-mark='undo-failed'] {
+  border-color: var(--status-compensation-failed);
+  color: var(--status-compensation-failed);
+}
+
+/*
+  Deliberately the quietest of them. A branch the run skipped is not a problem;
+  it is the workflow working. It recedes so the path that did run stands out.
+*/
+.step-mark[data-mark='not-taken'] {
+  border-style: dashed;
+}
+
+.branch-set {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+
+/*
+  The sentence that separates a fork from a choice. Stated once above the arms
+  rather than repeated on each, because it is a property of the split.
+*/
+.branch-rule {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/*
+  Unordered, unlike the steps. A fork's arms genuinely have no order - they run
+  at the same time - and numbering them would imply one goes first.
+*/
+.branches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.branch {
+  margin: 0.5rem 0;
+}
+
+/*
+  Dimmed, not hidden. The arm the run did not take is still part of what this
+  workflow does, and hiding it would answer "what could have happened here?"
+  with silence. 0.7 keeps --text-muted above 4.5:1 on --surface.
+*/
+.branch-not-taken {
+  opacity: 0.7;
+}
+
+.branch-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 0.25rem;
+}
+
+.branch-name {
+  font-weight: 600;
+}
+
+.branch-mark {
+  border-style: dashed;
+}

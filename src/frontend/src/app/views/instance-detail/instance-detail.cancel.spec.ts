@@ -40,9 +40,23 @@ awaitingRecovery: false,
 
   const text = (): string => fixture.nativeElement.textContent ?? '';
 
+  /**
+   * Refuses the shape request the view chains off every instance load (#181).
+   *
+   * Refused rather than answered: cancelling is what these tests are about, and
+   * a run whose shape did not load must still be cancellable - which is worth
+   * exercising rather than stepping around.
+   */
+  function refuseShape(): void {
+    http
+      .expectOne((request) => request.url.startsWith('/api/workflows/'))
+      .flush({ title: 'Not Found' }, { status: 404, statusText: 'Not Found' });
+  }
+
   function load(status: InstanceStatus): void {
     http.expectOne(`/api/instances/${id}`).flush(instance(status));
     http.expectOne(`/api/instances/${id}/history`).flush([]);
+    refuseShape();
     fixture.detectChanges();
   }
 
@@ -92,6 +106,7 @@ awaitingRecovery: false,
     // instance and the history is what an operator looks at next.
     http.expectOne(`/api/instances/${id}`).flush(instance('Cancelled'));
     http.expectOne(`/api/instances/${id}/history`).flush([]);
+    refuseShape();
     fixture.detectChanges();
 
     expect(text()).toContain('Cancelled');
