@@ -360,6 +360,55 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Equal(0, (await store.FindAsync(record.Id))!.StepAttempts);
     }
 
+    [SkippableFact]
+    public async Task Ownership_and_lease_round_trip()
+    {
+        // #143. Third field in a row to reach this suite because a provider
+        // dropped one silently (#106, #107). An owner that reads back as null
+        // makes every instance look claimable, so two nodes would run the same
+        // work believing nobody had it.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+
+        await store.SaveAsync(
+            loaded! with { OwnerNodeId = "node-a", LeaseExpiresAt = T0.AddSeconds(30) },
+            []);
+
+        var owned = await store.FindAsync(record.Id);
+
+        Assert.Equal("node-a", owned!.OwnerNodeId);
+        Assert.Equal(T0.AddSeconds(30), owned.LeaseExpiresAt);
+    }
+
+    [SkippableFact]
+    public async Task A_released_lease_round_trips_as_absent()
+    {
+        // Releasing matters as much as claiming: a store that only ever wrote a
+        // non-null owner would leave every recovered instance looking owned by
+        // a node that is gone.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+        var owned = await store.SaveAsync(
+            loaded! with { OwnerNodeId = "node-a", LeaseExpiresAt = T0.AddSeconds(30) },
+            []);
+
+        // Guards the assertion below from being vacuous.
+        Assert.Equal("node-a", (await store.FindAsync(record.Id))!.OwnerNodeId);
+
+        await store.SaveAsync(owned with { OwnerNodeId = null, LeaseExpiresAt = null }, []);
+
+        var released = await store.FindAsync(record.Id);
+
+        Assert.Null(released!.OwnerNodeId);
+        Assert.Null(released.LeaseExpiresAt);
+    }
+
     // --------------------------------------------------------------- list
 
     [SkippableFact]

@@ -286,6 +286,8 @@ public sealed class EfCoreWorkflowStore(
         row.ErrorType = record.ErrorType;
         row.ErrorMessage = record.ErrorMessage;
         row.StepAttempts = record.StepAttempts;
+        row.OwnerNodeId = record.OwnerNodeId;
+        row.LeaseExpiresAt = record.LeaseExpiresAt;
         row.Revision = record.Revision;
         row.DataJson = this.serializer.Serialize(record.Data);
 
@@ -314,6 +316,8 @@ public sealed class EfCoreWorkflowStore(
         ErrorType = row.ErrorType,
         ErrorMessage = row.ErrorMessage,
         StepAttempts = row.StepAttempts,
+        OwnerNodeId = row.OwnerNodeId,
+        LeaseExpiresAt = row.LeaseExpiresAt,
         Data = this.serializer.Deserialize(row.DataJson),
         Input = row.InputJson is null
             ? null
