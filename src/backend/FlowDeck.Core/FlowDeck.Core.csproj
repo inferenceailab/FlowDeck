@@ -8,6 +8,22 @@
 
   <ItemGroup>
     <!--
+      This project's first package reference, argued rather than assumed
+      (ADR-0010 requires the judgement per case, ADR-0025 decision 1 makes it).
+
+      Abstractions only: no implementation, no sink, no transitive weight, and
+      nothing that decides where a host's logs go. The alternative is a
+      hand-rolled logging interface, which would be a worse ILogger that every
+      host then has to adapt to.
+
+      It also brings the [LoggerMessage] source generator, which is what keeps
+      instrumentation off the engine's hot path when nothing is listening.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       So tests can compile a definition the way the engine does, without
       WorkflowBuilder becoming public. Widening the API surface to suit a test
       would make an internal detail something consumers can depend on and this
