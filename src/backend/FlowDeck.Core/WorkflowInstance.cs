@@ -18,8 +18,19 @@ namespace FlowDeck.Core;
 /// </para>
 ///
 /// <para>
-/// Not thread-safe. One instance is executed by one worker at a time - the
-/// invariant #39 must preserve.
+/// <b>One instance is no longer executed by one thread.</b> That invariant held
+/// from M2 until ADR-0024 made parallel branches genuinely concurrent. The M6
+/// lease still gives one <i>node</i> the instance, but inside that node several
+/// branches run at once, so the fields the engine mutates while a fork is in
+/// flight are written from more than one thread.
+/// </para>
+///
+/// <para>
+/// What keeps that safe is not this class: it is that concurrency is confined
+/// to step execution. Branch tasks touch shared instance state at two points
+/// only - the failure fields, taken by whichever branch fails first, and the
+/// checkpoint, which every branch reaches through a single writer. The linear
+/// position fields belong to the top-level sequence, and no branch touches them.
 /// </para>
 /// </remarks>
 public sealed class WorkflowInstance
@@ -136,16 +147,20 @@ public sealed class WorkflowInstance
     /// </summary>
     /// <remarks>
     /// Empty for a terminal instance, and one entry for an in-flight linear one.
-    /// It becomes plural when a fork is in flight (#164).
     ///
     /// <para>
-    /// Derived from the position rather than the other way round, for now. The
-    /// engine's loop is still index-driven, so the index is what it maintains
-    /// and this is projected from it at each checkpoint. #164 inverts that: the
-    /// set becomes what the loop advances and the index becomes the projection
-    /// the doc comment on <see cref="WorkflowInstanceRecord.CurrentStepIndex"/>
-    /// describes. The durable shape is settled first so the inversion is a
-    /// change to the engine alone, not to every provider at once.
+    /// <b>This is the answer for callers that have no run in hand</b> - one that
+    /// cancelled the instance, or read it back from the store. It is derived
+    /// from the linear position, so it describes a straight line exactly and
+    /// cannot describe a fork: an instance at three places at once has no single
+    /// <see cref="CurrentStepName"/> to derive from.
+    /// </para>
+    ///
+    /// <para>
+    /// While an instance is executing, the running fork supplies the real set to
+    /// <see cref="ToRecord"/> instead, because only it knows how many branches
+    /// are in flight (#164). The stored record is therefore right about a fork
+    /// even though this property could not have said so.
     /// </para>
     /// </remarks>
     public IReadOnlyList<ActiveNode> ActiveNodes =>
@@ -170,27 +185,40 @@ public sealed class WorkflowInstance
         or InstanceStatus.CompensationFailed;
 
     /// <summary>Projects this instance into its durable form.</summary>
-    internal WorkflowInstanceRecord ToRecord(IWorkflowData data, object? input) => new()
-    {
-        Id = this.Id,
-        DefinitionId = this.DefinitionId,
-        DefinitionVersion = this.DefinitionVersion,
-        Status = this.Status,
-        CurrentStepIndex = this.CurrentStepIndex,
-        StepAttempts = this.StepAttempts,
-        CurrentStepName = this.CurrentStepName,
-        CreatedAt = this.CreatedAt,
-        CompletedAt = this.CompletedAt,
-        FailedStepName = this.FailedStepName,
-        ErrorType = this.ErrorType,
-        ErrorMessage = this.ErrorMessage,
-        ActiveNodes = this.ActiveNodes,
-        Data = data.Snapshot(),
-        Input = input,
-        Revision = this.Revision,
-        OwnerNodeId = this.OwnerNodeId,
-        LeaseExpiresAt = this.LeaseExpiresAt,
-    };
+    /// <param name="activeNodes">
+    /// Where the instance is, as the executing run knows it, or
+    /// <see langword="null"/> to derive it from the linear position.
+    /// </param>
+    /// <remarks>
+    /// The run supplies the set while an instance is executing, because only it
+    /// knows how many branches are in flight. Everything else - cancelling,
+    /// reading an instance back - has no run and gets the derived answer, which
+    /// is right for a straight line and is all those callers describe.
+    /// </remarks>
+    internal WorkflowInstanceRecord ToRecord(
+        IWorkflowData data,
+        object? input,
+        IReadOnlyList<ActiveNode>? activeNodes = null) => new()
+        {
+            Id = this.Id,
+            DefinitionId = this.DefinitionId,
+            DefinitionVersion = this.DefinitionVersion,
+            Status = this.Status,
+            CurrentStepIndex = this.CurrentStepIndex,
+            StepAttempts = this.StepAttempts,
+            CurrentStepName = this.CurrentStepName,
+            CreatedAt = this.CreatedAt,
+            CompletedAt = this.CompletedAt,
+            FailedStepName = this.FailedStepName,
+            ErrorType = this.ErrorType,
+            ErrorMessage = this.ErrorMessage,
+            ActiveNodes = activeNodes ?? this.ActiveNodes,
+            Data = data.Snapshot(),
+            Input = input,
+            Revision = this.Revision,
+            OwnerNodeId = this.OwnerNodeId,
+            LeaseExpiresAt = this.LeaseExpiresAt,
+        };
 
     /// <summary>Rebuilds an instance from its durable form.</summary>
     internal static WorkflowInstance FromRecord(WorkflowInstanceRecord record) =>

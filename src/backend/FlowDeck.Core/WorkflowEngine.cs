@@ -252,6 +252,12 @@ public sealed class WorkflowEngine
     /// <summary>
     /// Drives an instance forward, checkpointing after every step.
     /// </summary>
+    /// <remarks>
+    /// The top-level sequence is walked by the same code that walks a branch;
+    /// the only difference is that the top-level one also maintains
+    /// <see cref="WorkflowInstance.CurrentStepIndex"/>, which describes a
+    /// straight line and cannot describe a fork (ADR-0024).
+    /// </remarks>
     private async Task RunAsync(
         WorkflowInstance instance,
         IReadOnlyList<StepDeclaration> steps,
@@ -259,120 +265,515 @@ public sealed class WorkflowEngine
         object? input,
         CancellationToken cancellationToken)
     {
-        while (instance.CurrentStepIndex < steps.Count)
+        var run = new Run(this, instance, data, input);
+
+        var progress = await run
+            .SequenceAsync(steps, instance.CurrentStepIndex, branchPath: [], cancellationToken)
+            .ConfigureAwait(false);
+
+        switch (progress)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            case Progress.Suspended:
+                // The step that suspended already checkpointed. Nothing more
+                // happens until something resumes the instance.
+                return;
 
-            var step = steps[instance.CurrentStepIndex];
-            instance.CurrentStepName = step.Name;
-
-            var startedAt = this.timeProvider.GetUtcNow();
-
-            var context = new StepContext(instance.Id, step.Name, data, input);
-            var result = await StepExecutor
-                .ExecuteAsync(step.Factory(), context, cancellationToken)
-                .ConfigureAwait(false);
-
-            // Recorded for every execution, including failures and suspensions.
-            // History that only covered successes would be silent about exactly
-            // the runs an operator opens it to investigate.
-            var entry = new StepHistoryEntry
-            {
-                InstanceId = instance.Id,
-                Sequence = 0, // assigned by the store
-                StepName = step.Name,
-                StartedAt = startedAt,
-                CompletedAt = this.timeProvider.GetUtcNow(),
-                Status = result.Status,
-
-                // StepAttempts counts attempts already finished, so the one
-                // just executed is the next number. Read before the increment
-                // below, which is why this is +1 rather than the field itself.
-                Attempt = instance.StepAttempts + 1,
-                ErrorType = result.Error?.GetType().Name,
-                ErrorMessage = result.Error?.Message,
-            };
-
-            if (result.Status == StepStatus.Failed)
-            {
-                instance.StepAttempts++;
-
-                if (step.RetryPolicy.AllowsAnotherAttempt(instance.StepAttempts))
-                {
-                    // Checkpointed before waiting, so the attempt count is
-                    // durable. An in-memory counter would reset on restart and
-                    // a host recycling during an outage would retry forever.
-                    await this.CheckpointAsync(instance, data, input, [entry], cancellationToken)
-                        .ConfigureAwait(false);
-
-                    var delay = step.RetryPolicy.DelayBefore(instance.StepAttempts + 1, this.random);
-
-                    if (delay > TimeSpan.Zero)
-                    {
-                        // Blocks the caller. The engine is synchronous, so
-                        // there is nowhere else for the wait to live yet -
-                        // releasing the worker is a scheduling question that
-                        // overlaps #39, and ADR-0020 leaves it open.
-                        await Task.Delay(delay, this.timeProvider, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    continue;
-                }
-
-                // Recorded before rolling back, so the cause survives whatever
-                // the rollback does. A compensating action's error overwriting
-                // it would leave an operator debugging the cleanup instead of
-                // the problem.
-                instance.Error = result.Error;
-                instance.ErrorType = result.Error?.GetType().Name;
-                instance.ErrorMessage = result.Error?.Message;
-                instance.FailedStepName = result.StepName;
-
+            case Progress.Failed:
                 // The instance stays Running through the rollback. ADR-0008
                 // makes terminal states final, so compensation has to happen
                 // before one is reached, never after.
-                await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
-
                 instance.Status = await this
-                    .CompensateAsync(instance, steps, data, input, cancellationToken)
+                    .CompensateAsync(run, instance, steps, data, input, cancellationToken)
                     .ConfigureAwait(false);
 
-                instance.CurrentStepName = step.Name;
+                // Points at the step that stopped it, wherever in the graph that
+                // was, rather than at whichever sequence position the rollback
+                // finished on.
+                instance.CurrentStepName = instance.FailedStepName;
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
 
-                await this.CheckpointAsync(instance, data, input, [], cancellationToken).ConfigureAwait(false);
+                await run.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
                 return;
-            }
 
-            // Reset on success: advancing past a step means the next arrival at
-            // any step starts fresh, rather than inheriting a count from work
-            // that has already succeeded.
-            instance.StepAttempts = 0;
+            default:
+                instance.CurrentStepName = null;
+                instance.Status = InstanceStatus.Completed;
+                instance.CompletedAt = this.timeProvider.GetUtcNow();
 
-            if (!result.ShouldAdvance)
-            {
-                // The step asked to be resumed later. Stay positioned on it so
-                // resuming re-enters the same step rather than skipping it.
-                instance.Status = InstanceStatus.Suspended;
-
-                await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
+                await run.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
                 return;
-            }
-
-            instance.CurrentStepIndex++;
-
-            // Checkpointed after advancing, so recovery never re-runs a step
-            // that already completed - the property NFR-1 rests on.
-            await this.CheckpointAsync(instance, data, input, [entry], cancellationToken).ConfigureAwait(false);
         }
-
-        instance.CurrentStepName = null;
-        instance.Status = InstanceStatus.Completed;
-        instance.CompletedAt = this.timeProvider.GetUtcNow();
-
-        await this.CheckpointAsync(instance, data, input, [], cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>What a sequence of steps did before it handed control back.</summary>
+    private enum Progress
+    {
+        /// <summary>Every step ran. For a branch, it reached its join.</summary>
+        Completed,
+
+        /// <summary>A step asked to be resumed later.</summary>
+        Suspended,
+
+        /// <summary>A step failed and had no attempts left.</summary>
+        Failed,
+    }
+
+    /// <summary>
+    /// One execution of one instance, across however many branches it forks
+    /// into.
+    /// </summary>
+    /// <remarks>
+    /// Exists because a fork gives an instance several simultaneous positions
+    /// and one shared store revision. Both live here rather than on
+    /// <see cref="WorkflowEngine"/>, which is shared by every instance, or on
+    /// <see cref="WorkflowInstance"/>, which is also the shape callers hold
+    /// after the run has finished.
+    /// </remarks>
+    private sealed class Run(
+        WorkflowEngine engine,
+        WorkflowInstance instance,
+        IWorkflowData data,
+        object? input)
+    {
+        /// <summary>
+        /// The single writer of ADR-0024 decision 3.
+        /// </summary>
+        /// <remarks>
+        /// Concurrent branches each holding a stale <c>Revision</c> would have
+        /// every save but one rejected - #19's optimistic concurrency turned
+        /// into a livelock by design rather than a race. Serialising the writes
+        /// keeps the revision meaning what it always meant, and still lets the
+        /// slow part, the step bodies, overlap.
+        /// </remarks>
+        private readonly SemaphoreSlim writer = new(1, 1);
+
+        private readonly Lock cursorGate = new();
+        private readonly List<Cursor> cursors = [];
+
+        /// <summary>
+        /// Runs a sequence of steps, fanning out wherever one branches.
+        /// </summary>
+        /// <param name="branchPath">
+        /// The branches taken to reach this sequence, outermost first. Empty
+        /// identifies the top-level sequence, which is the only one that owns
+        /// the instance's linear position.
+        /// </param>
+        public async Task<Progress> SequenceAsync(
+            IReadOnlyList<StepDeclaration> steps,
+            int startIndex,
+            IReadOnlyList<string> branchPath,
+            CancellationToken cancellationToken,
+            Cursor? opened = null)
+        {
+            var topLevel = branchPath.Count == 0;
+
+            // A fork opens its arms' cursors before it starts them, so the
+            // checkpoint recording the fork already names every arm. An arm that
+            // opened its own cursor here would not exist until it ran, and a
+            // crash in between would find an instance recorded at the step that
+            // forked rather than at the branches it forked into.
+            var cursor = opened ?? this.Open(branchPath);
+
+            try
+            {
+                for (var index = startIndex; index < steps.Count; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var step = steps[index];
+
+                    cursor.StepName = step.Name;
+                    cursor.Attempts = topLevel ? instance.StepAttempts : 0;
+
+                    if (topLevel)
+                    {
+                        instance.CurrentStepName = step.Name;
+                    }
+
+                    var next = index + 1 < steps.Count ? steps[index + 1].Name : null;
+
+                    var progress = await this
+                        .StepAsync(step, cursor, topLevel, index, next, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (progress != Progress.Completed)
+                    {
+                        return progress;
+                    }
+
+                    if (step.Branches.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    // The branching step is not past until its branches have
+                    // joined, so the position stayed on it through the
+                    // checkpoint above. A crash mid-fork therefore re-enters the
+                    // branching step on recovery, re-running it and every branch
+                    // step that had completed - #166's problem, named here
+                    // rather than left to be discovered.
+                    // Not executing while its branches are: the step that forked
+                    // sits at the join, and reporting it as active alongside them
+                    // would name a place nothing is running.
+                    cursor.StepName = null;
+
+                    var branched = await this.BranchAsync(step, branchPath, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (branched != Progress.Completed)
+                    {
+                        return branched;
+                    }
+
+                    cursor.StepName = next;
+
+                    if (topLevel)
+                    {
+                        instance.CurrentStepIndex = index + 1;
+                    }
+
+                    await this.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
+                }
+
+                return Progress.Completed;
+            }
+            finally
+            {
+                // Whatever happened, this sequence is no longer anywhere. A
+                // cursor left behind would report a finished branch as still
+                // running for the rest of the instance's life.
+                this.Close(cursor);
+            }
+        }
+
+        /// <summary>
+        /// Writes the instance's state and any history through the one writer.
+        /// </summary>
+        public async Task CheckpointAsync(
+            IReadOnlyList<StepHistoryEntry> history,
+            CancellationToken cancellationToken)
+        {
+            await this.writer.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                // The record is built inside the gate as well as saved inside
+                // it. Building it outside would snapshot a revision another
+                // branch had already superseded by the time this save ran.
+                var saved = await engine.store
+                    .SaveAsync(instance.ToRecord(data, input, this.Snapshot()), history, cancellationToken)
+                    .ConfigureAwait(false);
+
+                instance.Revision = saved.Revision;
+            }
+            finally
+            {
+                this.writer.Release();
+            }
+        }
+
+        /// <summary>
+        /// Executes one step, retrying it as its policy allows.
+        /// </summary>
+        private async Task<Progress> StepAsync(
+            StepDeclaration step,
+            Cursor cursor,
+            bool topLevel,
+            int index,
+            string? nextStepName,
+            CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                var startedAt = engine.timeProvider.GetUtcNow();
+
+                var context = new StepContext(instance.Id, step.Name, data, input);
+                var result = await StepExecutor
+                    .ExecuteAsync(step.Factory(), context, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // Recorded for every execution, including failures and
+                // suspensions. History that only covered successes would be
+                // silent about exactly the runs an operator opens it to
+                // investigate.
+                var entry = new StepHistoryEntry
+                {
+                    InstanceId = instance.Id,
+                    Sequence = 0, // assigned by the store
+                    StepName = step.Name,
+                    StartedAt = startedAt,
+                    CompletedAt = engine.timeProvider.GetUtcNow(),
+                    Status = result.Status,
+
+                    // The count holds attempts already finished, so the one just
+                    // executed is the next number.
+                    Attempt = cursor.Attempts + 1,
+                    ErrorType = result.Error?.GetType().Name,
+                    ErrorMessage = result.Error?.Message,
+                };
+
+                if (result.Status == StepStatus.Failed)
+                {
+                    cursor.Attempts++;
+
+                    if (topLevel)
+                    {
+                        instance.StepAttempts = cursor.Attempts;
+                    }
+
+                    if (step.RetryPolicy.AllowsAnotherAttempt(cursor.Attempts))
+                    {
+                        // Checkpointed before waiting, so the attempt count is
+                        // durable. An in-memory counter would reset on restart
+                        // and a host recycling during an outage would retry
+                        // forever.
+                        await this.CheckpointAsync([entry], cancellationToken).ConfigureAwait(false);
+
+                        var delay = step.RetryPolicy.DelayBefore(cursor.Attempts + 1, engine.random);
+
+                        if (delay > TimeSpan.Zero)
+                        {
+                            // Blocks this branch. The engine is synchronous
+                            // within a branch, so there is nowhere else for the
+                            // wait to live yet - ADR-0020 leaves it open.
+                            await Task.Delay(delay, engine.timeProvider, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
+                    // Recorded before rolling back, so the cause survives
+                    // whatever the rollback does. A compensating action's error
+                    // overwriting it would leave an operator debugging the
+                    // cleanup instead of the problem.
+                    this.RecordFailure(step.Name, result.Error);
+
+                    await this.CheckpointAsync([entry], cancellationToken).ConfigureAwait(false);
+
+                    return Progress.Failed;
+                }
+
+                if (!result.ShouldAdvance)
+                {
+                    if (!topLevel)
+                    {
+                        // Suspending inside a branch would promise a resumption
+                        // that cannot be kept: the instance's durable position
+                        // is still the branching step, so resuming would re-run
+                        // every branch step that had already completed. Failing
+                        // says so loudly rather than duplicating side effects
+                        // quietly. Lifted by #166.
+                        var unsupported = new NotSupportedException(
+                            $"Step '{step.Name}' suspended inside branch '{string.Join('/', cursor.BranchPath)}'. "
+                            + "Suspending inside a branch is not supported yet (#166).");
+
+                        this.RecordFailure(step.Name, unsupported);
+
+                        await this.CheckpointAsync(
+                            [
+                                entry with
+                                {
+                                    Status = StepStatus.Failed,
+                                    ErrorType = nameof(NotSupportedException),
+                                    ErrorMessage = unsupported.Message,
+                                },
+                            ],
+                            cancellationToken).ConfigureAwait(false);
+
+                        return Progress.Failed;
+                    }
+
+                    // The step asked to be resumed later. Stay positioned on it
+                    // so resuming re-enters the same step rather than skipping
+                    // it.
+                    instance.Status = InstanceStatus.Suspended;
+
+                    await this.CheckpointAsync([entry], cancellationToken).ConfigureAwait(false);
+
+                    return Progress.Suspended;
+                }
+
+                // Reset on success: advancing past a step means the next arrival
+                // at any step starts fresh, rather than inheriting a count from
+                // work that has already succeeded.
+                cursor.Attempts = 0;
+
+                // A branching step is not finished until its branches have
+                // joined, so only a plain step advances here. Checkpointing
+                // after advancing is what stops recovery re-running a step that
+                // already completed - the property NFR-1 rests on.
+                if (topLevel)
+                {
+                    instance.StepAttempts = 0;
+                }
+
+                if (step.Branches.Count == 0)
+                {
+                    // Where this sequence would resume, not where it has been.
+                    // Left naming the step it just finished, a recovered
+                    // instance would re-run it; left naming nothing, a recovered
+                    // instance would be nowhere at all.
+                    cursor.StepName = nextStepName;
+
+                    if (topLevel)
+                    {
+                        instance.CurrentStepIndex = index + 1;
+                    }
+                }
+
+                await this.CheckpointAsync([entry], cancellationToken).ConfigureAwait(false);
+
+                return Progress.Completed;
+            }
+        }
+
+        /// <summary>
+        /// Runs whatever branches leave a step: every arm of a fork, or the one
+        /// arm of a choice whose condition holds.
+        /// </summary>
+        private async Task<Progress> BranchAsync(
+            StepDeclaration step,
+            IReadOnlyList<string> branchPath,
+            CancellationToken cancellationToken)
+        {
+            if (!step.Branches[0].IsParallel)
+            {
+                // Conditions are tested in declaration order and the first match
+                // wins, so an author reads them the way they read an if/else if
+                // chain. No match is an ordinary shape, not an error: failing
+                // would make every branch set implicitly require a catch-all
+                // (ADR-0024 decision 6).
+                var chosen = step.Branches.FirstOrDefault(branch => branch.Condition?.Invoke(data) == true);
+
+                return chosen is null
+                    ? Progress.Completed
+                    : await this
+                        .SequenceAsync(chosen.Steps, 0, [.. branchPath, chosen.Name], cancellationToken)
+                        .ConfigureAwait(false);
+            }
+
+            // Task.Run rather than just calling the async method: an async
+            // method runs synchronously until its first await, so a step body
+            // that blocks instead of awaiting would hold up every later arm and
+            // the fork would silently be a sequence. Author code is untrusted
+            // about whether it awaits, the same way it is untrusted about
+            // whether it throws.
+            var arms = step.Branches
+                .Select(branch =>
+                {
+                    IReadOnlyList<string> path = [.. branchPath, branch.Name];
+                    var cursor = this.Open(path);
+
+                    // Named before the arm starts, so the checkpoint below
+                    // records where each arm is about to be rather than an empty
+                    // set that says the instance is nowhere.
+                    cursor.StepName = branch.Steps[0].Name;
+
+                    return (Branch: branch, Path: path, Cursor: cursor);
+                })
+                .ToArray();
+
+            // The fork is durable before any arm runs. A crash between opening
+            // the fork and the first arm's first checkpoint would otherwise
+            // leave an instance recorded at the step that forked, and recovery
+            // would have no way to know that it had.
+            await this.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
+
+            var running = arms
+                .Select(arm => Task.Run(
+                    () => this.SequenceAsync(arm.Branch.Steps, 0, arm.Path, cancellationToken, arm.Cursor),
+                    cancellationToken))
+                .ToArray();
+
+            // Every arm is awaited even once one has failed. The join waits for
+            // all of them (ADR-0024 decision 6): abandoning a sibling mid-step
+            // would not stop its side effects, only stop the engine from
+            // recording them.
+            var results = await Task.WhenAll(running).ConfigureAwait(false);
+
+            if (Array.IndexOf(results, Progress.Failed) >= 0)
+            {
+                return Progress.Failed;
+            }
+
+            return Array.IndexOf(results, Progress.Suspended) >= 0
+                ? Progress.Suspended
+                : Progress.Completed;
+        }
+
+        /// <summary>
+        /// Records the first failure to reach it, and ignores later ones.
+        /// </summary>
+        /// <remarks>
+        /// Two branches can fail at once. The instance reports one of them, and
+        /// which one is whichever failed first in wall-clock terms rather than
+        /// in declaration order - there is no order between concurrent arms to
+        /// prefer. Both failures are in history either way.
+        /// </remarks>
+        private void RecordFailure(string stepName, Exception? error)
+        {
+            lock (this.cursorGate)
+            {
+                if (instance.FailedStepName is not null)
+                {
+                    return;
+                }
+
+                instance.Error = error;
+                instance.ErrorType = error?.GetType().Name;
+                instance.ErrorMessage = error?.Message;
+                instance.FailedStepName = stepName;
+            }
+        }
+
+        private Cursor Open(IReadOnlyList<string> branchPath)
+        {
+            var cursor = new Cursor(branchPath);
+
+            lock (this.cursorGate)
+            {
+                this.cursors.Add(cursor);
+            }
+
+            return cursor;
+        }
+
+        private void Close(Cursor cursor)
+        {
+            lock (this.cursorGate)
+            {
+                this.cursors.Remove(cursor);
+            }
+        }
+
+        /// <summary>
+        /// Every place this instance is right now, in the order the sequences
+        /// started.
+        /// </summary>
+        private IReadOnlyList<ActiveNode> Snapshot()
+        {
+            lock (this.cursorGate)
+            {
+                return
+                [
+                    .. this.cursors
+                        .Where(cursor => cursor.StepName is not null)
+                        .Select(cursor => new ActiveNode(cursor.StepName!, cursor.Attempts, cursor.BranchPath)),
+                ];
+            }
+        }
+
+        /// <summary>One running sequence's position within itself.</summary>
+        internal sealed class Cursor(IReadOnlyList<string> branchPath)
+        {
+            public IReadOnlyList<string> BranchPath { get; } = branchPath;
+
+            /// <summary>The step being executed, or null between steps.</summary>
+            public string? StepName { get; set; }
+
+            public int Attempts { get; set; }
+        }
+    }
     /// <summary>
     /// Undoes the steps that already ran, most recent first.
     /// </summary>
@@ -400,6 +801,7 @@ public sealed class WorkflowEngine
     /// </para>
     /// </remarks>
     private async Task<InstanceStatus> CompensateAsync(
+        Run run,
         WorkflowInstance instance,
         IReadOnlyList<StepDeclaration> steps,
         IWorkflowData data,
@@ -442,10 +844,7 @@ public sealed class WorkflowEngine
 
             // Recorded like any other execution, so "one of two undone" is a
             // fact an operator can read rather than infer.
-            await this.CheckpointAsync(
-                instance,
-                data,
-                input,
+            await run.CheckpointAsync(
                 [
                     new StepHistoryEntry
                     {
@@ -487,20 +886,4 @@ public sealed class WorkflowEngine
     /// prefix is part of the contract a dashboard reads.
     /// </remarks>
     internal static string CompensationStepName(string stepName) => $"compensate:{stepName}";
-
-    private async Task CheckpointAsync(
-        WorkflowInstance instance,
-        IWorkflowData data,
-        object? input,
-        IReadOnlyList<StepHistoryEntry> history,
-        CancellationToken cancellationToken)
-    {
-        // State and history go together: ADR-0013 requires the store to write
-        // them atomically, so a crash cannot leave one without the other.
-        var saved = await this.store
-            .SaveAsync(instance.ToRecord(data, input), history, cancellationToken)
-            .ConfigureAwait(false);
-
-        instance.Revision = saved.Revision;
-    }
 }
