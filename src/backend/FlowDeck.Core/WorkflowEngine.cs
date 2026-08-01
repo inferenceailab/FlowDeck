@@ -774,6 +774,7 @@ public sealed class WorkflowEngine
             public int Attempts { get; set; }
         }
     }
+
     /// <summary>
     /// Undoes the steps that already ran, most recent first.
     /// </summary>
@@ -799,6 +800,22 @@ public sealed class WorkflowEngine
     /// at the first failure. That is a genuine inconsistency, chosen rather
     /// than overlooked.
     /// </para>
+    ///
+    /// <para>
+    /// <b>What "most recent" means once branches exist.</b> Reverse execution
+    /// order is not well defined when two branches ran at the same time, so
+    /// ADR-0024 decision 7 orders by when each step <i>completed</i>. History is
+    /// exactly that record: every execution is appended by the same single
+    /// writer the moment the step finishes, so its sequence numbers <b>are</b>
+    /// completion order. Walking history backwards therefore needs no second
+    /// clock and no ordering the engine has to keep in step with the truth.
+    /// </para>
+    ///
+    /// <para>
+    /// Reading the record rather than remembering it also survives a restart: an
+    /// instance resumed in a second process still unwinds what the first one
+    /// did, which an in-memory list of completions could not do.
+    /// </para>
     /// </remarks>
     private async Task<InstanceStatus> CompensateAsync(
         Run run,
@@ -811,26 +828,17 @@ public sealed class WorkflowEngine
         var compensated = 0;
         var failures = 0;
 
-        // From the failing step down to the first. The failing step is included
-        // because it may have had an effect; steps beyond it never executed, so
-        // undoing them would act on the world based on work that never
-        // happened.
-        for (var index = instance.CurrentStepIndex; index >= 0; index--)
+        var declarations = Flatten(steps);
+
+        var history = await this.store.GetHistoryAsync(instance.Id, cancellationToken).ConfigureAwait(false);
+
+        foreach (var (name, compensation) in Undoable(history, declarations))
         {
-            var step = steps[index];
-
-            if (step.Compensation is null)
-            {
-                // Skipped, not a failure. Most steps have nothing to undo, and
-                // counting those would make every partial rollback look broken.
-                continue;
-            }
-
             var startedAt = this.timeProvider.GetUtcNow();
 
-            var context = new StepContext(instance.Id, step.Name, data, input);
+            var context = new StepContext(instance.Id, name, data, input);
             var result = await StepExecutor
-                .ExecuteAsync(step.Compensation(), context, cancellationToken)
+                .ExecuteAsync(compensation(), context, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Status == StepStatus.Failed)
@@ -850,7 +858,7 @@ public sealed class WorkflowEngine
                     {
                         InstanceId = instance.Id,
                         Sequence = 0, // assigned by the store
-                        StepName = CompensationStepName(step.Name),
+                        StepName = CompensationStepName(name),
                         StartedAt = startedAt,
                         CompletedAt = this.timeProvider.GetUtcNow(),
                         Status = result.Status,
@@ -878,6 +886,94 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
+    /// The steps to undo, most recently completed first.
+    /// </summary>
+    /// <remarks>
+    /// Driven by what history records, not by what the definition declares. Only
+    /// steps that actually ran appear, so a step on a branch the instance never
+    /// took is never undone - acting on the world because of work that never
+    /// happened is the failure mode #119 named and branching makes easier to
+    /// reach.
+    ///
+    /// <para>
+    /// A step is undone <b>once</b> however many times it ran. Three retries of
+    /// one step are three history entries and one effect to reverse; undoing it
+    /// three times would be the compensation equivalent of the duplicate side
+    /// effects retry exists to bound.
+    /// </para>
+    ///
+    /// <para>
+    /// A step that failed is included, because it may have had an effect
+    /// (ADR-0021) - the charge that reached the gateway and then timed out.
+    /// </para>
+    ///
+    /// <para>
+    /// There is deliberately <b>no</b> filter on the <c>compensate:</c> prefix
+    /// history uses for rollback entries. One was written and removed: the
+    /// declaration lookup below already rejects those names, because no step is
+    /// declared under them, so the filter never fired. Worse, it would have
+    /// fired wrongly for an author who named a step <c>compensate:something</c>,
+    /// silently refusing to undo a step that had run.
+    /// </para>
+    /// </remarks>
+    private static IEnumerable<(string Name, Func<IStep> Compensation)> Undoable(
+        IReadOnlyList<StepHistoryEntry> history,
+        IReadOnlyDictionary<string, StepDeclaration> declarations)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var index = history.Count - 1; index >= 0; index--)
+        {
+            var name = history[index].StepName;
+
+            if (!seen.Add(name))
+            {
+                continue;
+            }
+
+            // A step in history with no declaration means the definition changed
+            // under a running instance, which is #67's problem. Skipped rather
+            // than thrown: a rollback that aborted here would leave more undone
+            // than one that undoes what it still recognises.
+            if (declarations.TryGetValue(name, out var step) && step.Compensation is not null)
+            {
+                yield return (step.Name, step.Compensation);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Every step in the graph, branches included, keyed by name.
+    /// </summary>
+    /// <remarks>
+    /// Flat because names are unique graph-wide (#162), so a name identifies a
+    /// step without needing the path that reached it. History records names, and
+    /// this is what turns one back into the declaration that knows how to undo
+    /// it.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, StepDeclaration> Flatten(IReadOnlyList<StepDeclaration> steps)
+    {
+        var flat = new Dictionary<string, StepDeclaration>(StringComparer.Ordinal);
+
+        void Walk(IReadOnlyList<StepDeclaration> sequence)
+        {
+            foreach (var step in sequence)
+            {
+                flat[step.Name] = step;
+
+                foreach (var branch in step.Branches)
+                {
+                    Walk(branch.Steps);
+                }
+            }
+        }
+
+        Walk(steps);
+
+        return flat;
+    }
+
+    /// <summary>
     /// The history name for a step's compensating action.
     /// </summary>
     /// <remarks>
@@ -885,5 +981,7 @@ public sealed class WorkflowEngine
     /// the forward execution from the rollback without a second field. The
     /// prefix is part of the contract a dashboard reads.
     /// </remarks>
-    internal static string CompensationStepName(string stepName) => $"compensate:{stepName}";
+    internal static string CompensationStepName(string stepName) => CompensationPrefix + stepName;
+
+    private const string CompensationPrefix = "compensate:";
 }
