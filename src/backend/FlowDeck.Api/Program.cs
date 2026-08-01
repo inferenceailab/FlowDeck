@@ -23,7 +23,13 @@ builder.Services.AddSingleton<IWorkflowStore>(_ => new InMemoryWorkflowStore(new
 builder.Services.AddSingleton(provider => new WorkflowEngine(
     provider.GetRequiredService<WorkflowRegistry>(),
     provider.GetService<TimeProvider>(),
-    provider.GetRequiredService<IWorkflowStore>()));
+    provider.GetRequiredService<IWorkflowStore>(),
+
+    // Resolved rather than left null, so the engine's instrumentation reaches
+    // whatever sinks the host configured. The engine works without it - a null
+    // logger is silent, not broken (ADR-0025 decision 1) - which is why this is
+    // the host's line to write rather than the engine's to require.
+    logger: provider.GetService<ILogger<WorkflowEngine>>()));
 
 // How this node behaves in a cluster. Validated at startup rather than on first
 // poll, so a lease shorter than its own renewal interval fails the deployment

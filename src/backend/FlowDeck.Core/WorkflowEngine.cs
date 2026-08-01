@@ -1,4 +1,6 @@
 using FlowDeck.Core.Persistence;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowDeck.Core;
 
@@ -22,12 +24,14 @@ public sealed class WorkflowEngine
     private readonly TimeProvider timeProvider;
     private readonly IWorkflowStore store;
     private readonly Random? random;
+    private readonly ILogger<WorkflowEngine> logger;
 
     public WorkflowEngine(
         WorkflowRegistry registry,
         TimeProvider? timeProvider = null,
         IWorkflowStore? store = null,
-        Random? random = null)
+        Random? random = null,
+        ILogger<WorkflowEngine>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -42,7 +46,35 @@ public sealed class WorkflowEngine
         // Injectable so a jitter test can pin the delay. Randomness that
         // cannot be pinned makes a backoff test either flaky or vacuous.
         this.random = random;
+
+        // Optional, and null means silent rather than broken. Every existing
+        // test constructs an engine without one, and an engine that required a
+        // logger would make observability a precondition of running a workflow
+        // rather than a thing a host switches on (ADR-0025 decision 1).
+        this.logger = logger ?? NullLogger<WorkflowEngine>.Instance;
     }
+
+    /// <summary>
+    /// Puts an instance's identity on every entry written inside the scope.
+    /// </summary>
+    /// <remarks>
+    /// A scope rather than a field repeated at each call site, so that an entry
+    /// added later cannot forget it and so a structured sink has something to
+    /// group a run by (ADR-0025 decision 5).
+    ///
+    /// <para>
+    /// Carries only identity. Everything here is engine-assigned or
+    /// author-declared metadata; no workflow data reaches it, which is the
+    /// boundary ADR-0025 decision 3 draws.
+    /// </para>
+    /// </remarks>
+    private IDisposable? Scope(WorkflowInstance instance) =>
+        this.logger.BeginScope(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["InstanceId"] = instance.Id,
+            ["DefinitionId"] = instance.DefinitionId,
+            ["DefinitionVersion"] = instance.DefinitionVersion,
+        });
 
     /// <summary>
     /// Starts a new instance and runs it until it completes, suspends or fails.
@@ -91,6 +123,12 @@ public sealed class WorkflowEngine
         await this.store.CreateAsync(instance.ToRecord(data, input), cancellationToken).ConfigureAwait(false);
         instance.Revision = 1;
 
+        using var scope = this.Scope(instance);
+
+        // After the record exists, so an entry saying an instance started is
+        // never about one an operator cannot then look up.
+        this.logger.InstanceStarted(instance.DefinitionId, instance.DefinitionVersion);
+
         await this.RunAsync(instance, steps, data, input, resumeFrom: [], cancellationToken).ConfigureAwait(false);
 
         return instance;
@@ -120,6 +158,10 @@ public sealed class WorkflowEngine
         instance.Status = InstanceStatus.Running;
 
         var data = new WorkflowData(record.Data);
+
+        using var scope = this.Scope(instance);
+
+        this.logger.InstanceResumed(instance.DefinitionId, instance.CurrentStepName);
 
         // The stored set, not the index. A forked instance is at several places
         // at once and the index names only the step that forked, so resuming
@@ -219,6 +261,12 @@ public sealed class WorkflowEngine
 
         instance.Revision = saved.Revision;
 
+        using var scope = this.Scope(instance);
+
+        // After the save, so the entry describes a cancellation that is durable
+        // rather than one a concurrency failure was about to undo.
+        this.logger.InstanceCancelled(instance.DefinitionId, instance.CurrentStepName);
+
         return instance;
     }
 
@@ -282,9 +330,20 @@ public sealed class WorkflowEngine
             case Progress.Suspended:
                 // The step that suspended already checkpointed. Nothing more
                 // happens until something resumes the instance.
+                this.logger.InstanceSuspended(instance.DefinitionId, instance.CurrentStepName);
                 return;
 
             case Progress.Failed:
+                // Logged before the rollback, so the cause is on record even if
+                // compensation then fails and floods the log with its own
+                // trouble. The same ordering the engine already uses when it
+                // records the failure before compensating.
+                this.logger.InstanceFailed(
+                    instance.DefinitionId,
+                    instance.FailedStepName,
+                    instance.ErrorType,
+                    instance.ErrorMessage);
+
                 // The instance stays Running through the rollback. ADR-0008
                 // makes terminal states final, so compensation has to happen
                 // before one is reached, never after.
@@ -299,6 +358,15 @@ public sealed class WorkflowEngine
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
 
                 await run.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
+
+                // Only where a rollback actually ran. An instance with no
+                // compensating actions settles as Failed, and saying it "rolled
+                // back" would describe work that did not happen.
+                if (instance.Status != InstanceStatus.Failed)
+                {
+                    this.logger.InstanceCompensated(instance.DefinitionId, instance.Status);
+                }
+
                 return;
 
             default:
@@ -307,6 +375,11 @@ public sealed class WorkflowEngine
                 instance.CompletedAt = this.timeProvider.GetUtcNow();
 
                 await run.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
+
+                this.logger.InstanceCompleted(
+                    instance.DefinitionId,
+                    (instance.CompletedAt.Value - instance.CreatedAt).TotalMilliseconds);
+
                 return;
         }
     }

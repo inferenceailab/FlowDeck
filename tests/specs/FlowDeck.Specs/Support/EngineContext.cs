@@ -74,9 +74,26 @@ public sealed class EngineContext
         return registry;
     }
 
+    /// <summary>What the engine said while it ran, for the M8 scenarios.</summary>
+    /// <remarks>
+    /// Attached to every engine this context builds rather than only to the
+    /// observability scenarios' one. An entry is emitted on the same paths every
+    /// other scenario exercises, so recording it always means a change that
+    /// starts logging workflow data fails somewhere rather than nowhere.
+    /// </remarks>
+    public RecordingLogger Logger { get; } = new();
+
     /// <summary>Builds an engine over this scenario's declarations and store.</summary>
     public WorkflowEngine Engine(TimeProvider? clock = null) =>
-        new(this.BuildRegistry(), clock, this.Store);
+        new(this.BuildRegistry(), clock, this.Store, logger: new RecordingLogger<WorkflowEngine>(this.Logger));
+
+    /// <summary>Builds an engine that was given no logger at all.</summary>
+    /// <remarks>
+    /// The case an embedder gets by default. Observability is something a host
+    /// switches on, so an engine without a logger has to run rather than throw
+    /// (ADR-0025 decision 1).
+    /// </remarks>
+    public WorkflowEngine UnloggedEngine() => new(this.BuildRegistry(), store: this.Store);
 
     /// <summary>
     /// Builds an engine over a fresh registry and the same store — a restart.
@@ -86,7 +103,8 @@ public sealed class EngineContext
     /// a restart scenario is asserting that nothing survives except what was
     /// persisted, and a reader should be able to see that is what the step did.
     /// </remarks>
-    public WorkflowEngine RestartedHost() => new(this.BuildRegistry(), store: this.Store);
+    public WorkflowEngine RestartedHost() =>
+        new(this.BuildRegistry(), store: this.Store, logger: new RecordingLogger<WorkflowEngine>(this.Logger));
 
     /// <summary>Runs an action, keeping any exception for a later Then.</summary>
     public async Task CapturingErrorAsync(Func<Task> action)
