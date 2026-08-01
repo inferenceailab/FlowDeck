@@ -7,6 +7,7 @@
 | [Frontend architecture](frontend-architecture.md) | Dashboard shape, and the decisions made before building it |
 | [Implementation plan](implementation-plan.md) | Milestone roadmap and current status |
 | [Decision records](adr/README.md) | Why things are the way they are |
+| [Performance baseline](performance.md) | What it currently does, on what hardware, and where it degrades first |
 | [Prior art](prior-art.md) | What is borrowed from WorkflowCore, Hangfire and Elsa - and what differs |
 | [Defining a workflow](guides/defining-a-workflow.md) | How to use the library |
 | [Writing a persistence provider](guides/writing-a-persistence-provider.md) | Implementing `IWorkflowStore` |
