@@ -27,10 +27,13 @@ public sealed class WorkflowDataTypeMismatchException(string key, Type requested
 /// The mutable key-value state shared by the steps of one workflow instance.
 /// </summary>
 /// <remarks>
-/// One store per instance - never shared between instances. Not thread-safe by
-/// design: an instance is executed by one worker at a time, the same invariant
-/// <see cref="WorkflowInstance"/> relies on and that the distributed execution
-/// epic (#39) must preserve.
+/// One store per instance - never shared between instances, and safe to use
+/// from several at once <b>within</b> one instance: ADR-0024 makes parallel
+/// branches genuinely concurrent, so two of them may write at the same moment.
+///
+/// What the implementation does <b>not</b> give an author is atomicity across
+/// two calls. <c>Get</c> then <c>Set</c> from two branches is still a race the
+/// author has to think about, exactly as it would be in any shared state.
 ///
 /// Values are held as <see cref="object"/> because a workflow's data shape is
 /// author-defined and only known at runtime. Reads are checked, so a mistake
@@ -69,6 +72,18 @@ public sealed class WorkflowData : IWorkflowData
     // keys are the same.
     private readonly Dictionary<string, object?> values = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Guards every read and write, because parallel branches share this bag.
+    /// </summary>
+    /// <remarks>
+    /// Coarse rather than clever, per ADR-0024 decision 5. A workflow data bag
+    /// is small and written a handful of times per step, so contention is not
+    /// the concern - correctness is. A ConcurrentDictionary would be finer
+    /// grained and would still not make Snapshot a consistent point in time,
+    /// which is what a checkpoint needs.
+    /// </remarks>
+    private readonly Lock gate = new();
+
     public WorkflowData()
     {
     }
@@ -89,16 +104,25 @@ public sealed class WorkflowData : IWorkflowData
     public void Set<T>(string key, T value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        this.values[key] = value;
+
+        lock (this.gate)
+        {
+            this.values[key] = value;
+        }
     }
 
     public T Get<T>(string key)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
-        if (!this.values.TryGetValue(key, out var value))
+        object? value;
+
+        lock (this.gate)
         {
-            throw new WorkflowDataKeyNotFoundException(key);
+            if (!this.values.TryGetValue(key, out value))
+            {
+                throw new WorkflowDataKeyNotFoundException(key);
+            }
         }
 
         // A stored null satisfies any reference or nullable target.
@@ -119,7 +143,15 @@ public sealed class WorkflowData : IWorkflowData
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
-        if (this.values.TryGetValue(key, out var stored))
+        object? stored;
+        bool found;
+
+        lock (this.gate)
+        {
+            found = this.values.TryGetValue(key, out stored);
+        }
+
+        if (found)
         {
             if (stored is null)
             {
@@ -141,9 +173,23 @@ public sealed class WorkflowData : IWorkflowData
     public bool Contains(string key)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        return this.values.ContainsKey(key);
+
+        lock (this.gate)
+        {
+            return this.values.ContainsKey(key);
+        }
     }
 
-    public IReadOnlyDictionary<string, object?> Snapshot() =>
-        new Dictionary<string, object?>(this.values, StringComparer.Ordinal);
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Copied under the lock, so a checkpoint taken while a branch is writing
+    /// records a state that existed rather than a half-applied one.
+    /// </remarks>
+    public IReadOnlyDictionary<string, object?> Snapshot()
+    {
+        lock (this.gate)
+        {
+            return new Dictionary<string, object?>(this.values, StringComparer.Ordinal);
+        }
+    }
 }
