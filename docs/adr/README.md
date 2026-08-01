@@ -51,3 +51,4 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0022](0022-executable-specifications.md) | Feature files are executable, not decorative | Accepted | post-M5 |
 | [0023](0023-multi-node-execution.md) | Multi-node execution | Accepted | M6 |
 | [0024](0024-branching-and-parallel-execution.md) | Branching and parallel execution | Accepted | M7 |
+| [0025](0025-observability.md) | Observability | Accepted | M8 |
