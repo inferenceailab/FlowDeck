@@ -85,3 +85,32 @@ Feature: Recovering abandoned work
     When the dispatcher polls
     Then the dispatcher is still polling
     And that instance is left for another node
+
+  @issue-149
+  Scenario: A stopping node releases its leases
+    Given a node holding a lease on an instance
+    When the host stops gracefully
+    Then the instance has no owner afterwards
+    And another node can claim it immediately
+
+  @issue-149
+  Scenario: A killed node does not release
+    Given a node holding a lease on an instance
+    When the process dies without shutting down
+    Then the lease is still held
+    And it lapses on its own
+
+  @issue-149
+  Scenario: Draining does not release another node's lease
+    Given a node holding a lease on an instance
+    When a different node drains
+    Then the lease is still held
+
+  # Found when the readiness scenarios started failing: an unreachable store
+  # took the dispatcher loop down with it, so a database blip would have left
+  # every node permanently idle while still reporting itself alive.
+  @issue-147
+  Scenario: The dispatcher survives an unreachable store
+    Given a dispatcher whose store is unreachable
+    When the dispatcher polls repeatedly
+    Then it records the failures and keeps polling

@@ -321,6 +321,195 @@ public sealed class RecoverySteps(EngineContext world) : IDisposable
         Assert.Equal(InstanceStatus.Suspended, stored.Status);
     }
 
+    [Given("a dispatcher whose store is unreachable")]
+    public void GivenADispatcherWhoseStoreIsUnreachable()
+    {
+        var broken = new UnreachableStore();
+
+        this.dispatcher = new WorkflowDispatcher(
+            new WorkflowEngine(world.BuildRegistry(), this.clock, broken),
+            broken,
+            new ClusterOptions { NodeId = "node-a", PollInterval = TimeSpan.FromSeconds(1) },
+            this.clock);
+    }
+
+    [When("the dispatcher polls repeatedly")]
+    public async Task WhenTheDispatcherPollsRepeatedly()
+    {
+        using var stopping = new CancellationTokenSource();
+
+        var loop = this.Dispatcher.RunAsync(stopping.Token);
+
+        // Three ticks. One would show the loop survived a single failure;
+        // three shows it is still trying rather than sitting on a dead task.
+        for (var tick = 0; tick < 3; tick++)
+        {
+            this.clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Yield();
+        }
+
+        await stopping.CancelAsync();
+
+        // Kept rather than awaited here. Awaiting inside the When would fail
+        // the scenario at this line with a store error, and the Then that
+        // exists to describe the outcome would never run. It also hid a
+        // mutation: rethrowing from the loop faulted this task and the suite
+        // stayed green, because nothing asserted on how the loop ended.
+        world.Captured["loop"] = loop;
+
+        try
+        {
+            await loop;
+        }
+        catch (Exception ex)
+        {
+            world.Error = ex;
+        }
+    }
+
+    [Then("it records the failures and keeps polling")]
+    public void ThenItRecordsTheFailures()
+    {
+        // The loop survived. A store being briefly unreachable is ordinary -
+        // a failover, a restart, a network blip - and a loop that exited on the
+        // first one would leave this node permanently idle while still
+        // reporting itself alive.
+        Assert.Null(world.Error);
+
+        var loop = (Task)world.Captured["loop"]!;
+
+        Assert.Equal(TaskStatus.RanToCompletion, loop.Status);
+
+        // Counted, not merely swallowed: "idle because there is no work" and
+        // "idle because every poll fails" look identical from outside.
+        Assert.True(
+            this.Dispatcher.FailedPolls > 0,
+            "the dispatcher reported no failed polls against an unreachable store");
+    }
+
+    /// <summary>A store that cannot be reached, for the resilience scenario.</summary>
+    private sealed class UnreachableStore : IWorkflowStore
+    {
+        private static InvalidOperationException Down() => new("the database is unreachable");
+
+        public Task CreateAsync(WorkflowInstanceRecord record, CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<WorkflowInstanceRecord?> FindAsync(
+            Guid instanceId,
+            CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<WorkflowInstanceRecord> SaveAsync(
+            WorkflowInstanceRecord record,
+            IReadOnlyList<StepHistoryEntry> history,
+            CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<IReadOnlyList<StepHistoryEntry>> GetHistoryAsync(
+            Guid instanceId,
+            CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> ListAsync(
+            InstanceFilter filter,
+            CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<int> CountAsync(InstanceFilter filter, CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
+            throw Down();
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            throw Down();
+    }
+
+    // ----------------------------------------------- graceful stop (#149)
+
+    [Given("a node holding a lease on an instance")]
+    public async Task GivenANodeHoldingALease()
+    {
+        var seen = new HashSet<Guid>();
+
+        world.Declare("held", 1, builder => builder
+            .AddStep("wait", () => new SuspendsOnce(world.Log, seen))
+            .AddStep("after", () => new SpecSteps.Recording(world.Log, "after")));
+
+        world.Instance = await world.Engine(this.clock).StartAsync("held", 1);
+        this.subject = world.Instance.Id;
+
+        this.dispatcher = this.NewDispatcher("node-a");
+
+        var claims = new InstanceClaims(
+            world.Store,
+            new ClusterOptions { NodeId = "node-a", LeaseDuration = TimeSpan.FromSeconds(30) },
+            this.clock);
+
+        Assert.NotNull(await claims.TryClaimAsync(this.subject));
+    }
+
+    [When("the host stops gracefully")]
+    public async Task WhenTheHostStopsGracefully() =>
+        Assert.Equal(1, await this.Dispatcher.DrainAsync());
+
+    [When("a different node drains")]
+    public async Task WhenADifferentNodeDrains() =>
+        // Draining must only ever hand back this node's own work. Releasing a
+        // peer's live lease would give its in-flight instance to a third node
+        // while it was still running it.
+        Assert.Equal(0, await this.NewDispatcher("node-b").DrainAsync());
+
+    [When("the process dies without shutting down")]
+    public void WhenTheProcessDies()
+    {
+        // Nothing happens, and that is the scenario. A killed process never
+        // reaches its shutdown path, so the lease is left exactly as it was.
+    }
+
+    [Then("another node can claim it immediately")]
+    public async Task ThenAnotherNodeCanClaimItImmediately()
+    {
+        // Immediately: without advancing the clock at all. A released lease
+        // must not require a peer to wait out the original expiry.
+        var peer = new InstanceClaims(
+            world.Store,
+            new ClusterOptions { NodeId = "node-b", LeaseDuration = TimeSpan.FromSeconds(30) },
+            this.clock);
+
+        Assert.NotNull(await peer.TryClaimAsync(this.subject));
+    }
+
+    [Then("the lease is still held")]
+    public async Task ThenTheLeaseIsStillHeld()
+    {
+        var stored = await world.Store.FindAsync(this.subject);
+
+        Assert.Equal("node-a", stored!.OwnerNodeId);
+    }
+
+    [Then("it lapses on its own")]
+    public async Task ThenItLapsesOnItsOwn()
+    {
+        // The backstop. Draining is an optimisation for the graceful path;
+        // correctness cannot depend on it, because a killed process never runs
+        // it.
+        var peer = new InstanceClaims(
+            world.Store,
+            new ClusterOptions { NodeId = "node-b", LeaseDuration = TimeSpan.FromSeconds(30) },
+            this.clock);
+
+        Assert.Null(await peer.TryClaimAsync(this.subject));
+
+        this.clock.Advance(TimeSpan.FromSeconds(31));
+
+        Assert.NotNull(await peer.TryClaimAsync(this.subject));
+    }
+
     private WorkflowDispatcher NewDispatcher(string node)
     {
         var options = new ClusterOptions { NodeId = node, LeaseDuration = TimeSpan.FromSeconds(30) };
