@@ -2,8 +2,6 @@ using FlowDeck.Core;
 using FlowDeck.Core.Persistence;
 using FlowDeck.Persistence.EntityFrameworkCore;
 using FlowDeck.Specs.Support;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Reqnroll;
 
 namespace FlowDeck.Specs.Steps;
@@ -12,49 +10,23 @@ namespace FlowDeck.Specs.Steps;
 /// Binds Features/Persistence/StoreContract.feature.
 /// </summary>
 [Binding]
-public sealed class StoreContractSteps(EngineContext world) : IDisposable
+public sealed class StoreContractSteps(EngineContext world, StoreContext stores)
 {
     private static readonly DateTimeOffset T0 = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
 
-    private SqliteConnection? connection;
-    private IWorkflowStore? store;
     private WorkflowInstanceRecord? record;
     private WorkflowInstanceRecord? saved;
     private WorkflowInstanceRecord? stale;
     private Exception? storeError;
     private IReadOnlyList<string>? appliedTwice;
 
-    /// <summary>
-    /// The store a Given established.
-    /// </summary>
-    /// <remarks>
-    /// An asserting accessor rather than a null-forgiving operator at each use.
-    /// If a Given is missing, a scenario fails saying so instead of throwing a
-    /// NullReferenceException from whichever line happened to dereference first.
-    /// </remarks>
-    private IWorkflowStore Store =>
-        this.store ?? throw new InvalidOperationException("No scenario step established a store.");
+    private IWorkflowStore Store => stores.Store;
 
     private WorkflowInstanceRecord Record =>
         this.record ?? throw new InvalidOperationException("No scenario step created an instance.");
 
     private WorkflowInstanceRecord Saved =>
         this.saved ?? throw new InvalidOperationException("No scenario step saved an instance.");
-
-    // A regex rather than {word}: the outline's second example is "EF Core",
-    // and {word} captures a single word, so that row silently failed to bind.
-    [Given(@"^the (.+) workflow store$")]
-    public void GivenTheWorkflowStore(string provider) =>
-        this.store = provider switch
-        {
-            "in-memory" => new InMemoryWorkflowStore(),
-            "EF Core" => this.SqliteStore(),
-
-            // Not a fallback to in-memory. A misspelt provider silently running
-            // the in-memory store would report both examples green while only
-            // ever exercising one of them.
-            _ => throw new NotSupportedException($"Unknown provider '{provider}'."),
-        };
 
     [When("an instance is created and then saved with new state")]
     public async Task WhenAnInstanceIsCreatedAndSaved()
@@ -197,7 +169,7 @@ public sealed class StoreContractSteps(EngineContext world) : IDisposable
     [Given("an instance loaded at its current revision")]
     public async Task GivenAnInstanceLoadedAtItsCurrentRevision()
     {
-        this.store ??= new InMemoryWorkflowStore();
+        stores.UseInMemoryIfUnset();
         this.record = NewRecord();
 
         await this.Store.CreateAsync(this.Record);
@@ -245,15 +217,15 @@ public sealed class StoreContractSteps(EngineContext world) : IDisposable
     [Given("a store already at the current schema version")]
     public async Task GivenAStoreAtTheCurrentSchemaVersion()
     {
-        this.SqliteStore();
+        stores.Use("EF Core");
 
-        await new WorkflowStoreMigrator(this.ContextFactory).EnsureCreatedAsync();
+        await new WorkflowStoreMigrator(stores.ContextFactory).EnsureCreatedAsync();
     }
 
     [When("migrations are applied again")]
     public async Task WhenMigrationsAreAppliedAgain()
     {
-        var migrator = new WorkflowStoreMigrator(this.ContextFactory);
+        var migrator = new WorkflowStoreMigrator(stores.ContextFactory);
 
         this.appliedTwice = await migrator.MigrateAsync();
     }
@@ -269,27 +241,6 @@ public sealed class StoreContractSteps(EngineContext world) : IDisposable
         await this.Store.CreateAsync(probe);
 
         Assert.NotNull(await this.Store.FindAsync(probe.Id));
-    }
-
-    private WorkflowDbContext ContextFactory() =>
-        new(new DbContextOptionsBuilder<WorkflowDbContext>().UseSqlite(this.connection!).Options);
-
-    private IWorkflowStore SqliteStore()
-    {
-        // A shared in-memory SQLite connection: a real relational provider with
-        // no file to clean up. Closing the connection drops the database, which
-        // is what Dispose does.
-        this.connection = new SqliteConnection("DataSource=:memory:");
-        this.connection.Open();
-
-        using (var context = this.ContextFactory())
-        {
-            context.Database.EnsureCreated();
-        }
-
-        this.store = new EfCoreWorkflowStore(this.ContextFactory);
-
-        return this.store;
     }
 
     private static WorkflowInstanceRecord NewRecord() => new()
@@ -313,8 +264,6 @@ public sealed class StoreContractSteps(EngineContext world) : IDisposable
         Status = StepStatus.Success,
         Attempt = 1,
     };
-
-    public void Dispose() => this.connection?.Dispose();
 
     /// <summary>Suspends the first time it runs for an instance.</summary>
     private sealed class SuspendsOnce(Dictionary<string, object?> seen) : IStep

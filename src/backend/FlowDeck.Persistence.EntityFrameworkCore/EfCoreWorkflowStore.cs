@@ -24,6 +24,9 @@ public sealed class EfCoreWorkflowStore(
 {
     private readonly WorkflowDataSerializer serializer = serializer ?? new WorkflowDataSerializer();
 
+    /// <summary>Settings for the active-node column. No polymorphism, so no type handling.</summary>
+    private static readonly JsonSerializerOptions ActiveNodeJson = new(JsonSerializerDefaults.Web);
+
     public async Task CreateAsync(WorkflowInstanceRecord record, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -311,6 +314,13 @@ public sealed class EfCoreWorkflowStore(
         row.StepAttempts = record.StepAttempts;
         row.OwnerNodeId = record.OwnerNodeId;
         row.LeaseExpiresAt = record.LeaseExpiresAt;
+
+        // Null rather than "[]" for an empty set, so a terminal instance costs
+        // no payload and an upgraded database reads as empty rather than as a
+        // string that has to be parsed to discover it says nothing.
+        row.ActiveNodesJson = record.ActiveNodes.Count == 0
+            ? null
+            : JsonSerializer.Serialize(record.ActiveNodes, ActiveNodeJson);
         row.Revision = record.Revision;
         row.DataJson = this.serializer.Serialize(record.Data);
 
@@ -341,6 +351,9 @@ public sealed class EfCoreWorkflowStore(
         StepAttempts = row.StepAttempts,
         OwnerNodeId = row.OwnerNodeId,
         LeaseExpiresAt = row.LeaseExpiresAt,
+        ActiveNodes = row.ActiveNodesJson is null
+            ? []
+            : JsonSerializer.Deserialize<List<ActiveNode>>(row.ActiveNodesJson, ActiveNodeJson) ?? [],
         Data = this.serializer.Deserialize(row.DataJson),
         Input = row.InputJson is null
             ? null
