@@ -10,6 +10,7 @@
 | [Prior art](prior-art.md) | What is borrowed from WorkflowCore, Hangfire and Elsa - and what differs |
 | [Defining a workflow](guides/defining-a-workflow.md) | How to use the library |
 | [Writing a persistence provider](guides/writing-a-persistence-provider.md) | Implementing `IWorkflowStore` |
+| [Observing FlowDeck](guides/observing-flowdeck.md) | Every log, metric and span it emits — and what it never emits |
 | [HTTP API](api.md) | Endpoints, and why they are shaped that way |
 | [API error contract](api-errors.md) | What every error response means |
 | [Deployment](../deploy/README.md) | CI/CD and homelab setup |
@@ -18,6 +19,9 @@
 ## Where to start
 
 **Using the library** → [Defining a workflow](guides/defining-a-workflow.md).
+
+**Running it** → [Observing FlowDeck](guides/observing-flowdeck.md), then
+[Deployment](../deploy/README.md).
 
 **Contributing** → [Architecture](architecture.md), then
 [decision records](adr/README.md). The ADRs explain constraints that are not
