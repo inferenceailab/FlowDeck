@@ -95,7 +95,7 @@ states steps are implemented directly in C# initially, so a designer that
 | --- | --- | --- |
 | FR-3.1 | Failed steps retry according to a declared policy | M5 ✅ |
 | FR-3.2 | Completed steps can be compensated on later failure | M5 ✅ |
-| FR-3.3 | Multiple nodes share execution without double-running | M6 |
+| FR-3.3 | Multiple nodes share execution without double-running | M6 ✅ |
 
 FR-3.1 and FR-3.2 are **best-effort by design**, and the limits are stated in
 [ADR-0020](adr/0020-retry-semantics.md) and

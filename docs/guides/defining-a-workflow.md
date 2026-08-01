@@ -3,9 +3,12 @@
 Everything below works against `FlowDeck.Core` as it exists today. Nothing here
 is aspirational.
 
-> **Before you rely on this:** the engine is in-memory only. Instances are lost
-> when the process exits, and `ResumeAsync` works only in the process that
-> started the instance. See [known limitations](#known-limitations).
+> **Before you rely on this:** instances are durable, survive a restart, and are
+> recovered by another node if the one running them dies. The limits worth
+> knowing are that a step may run **twice** — on retry, and on lease expiry — so
+> [steps must be idempotent](#your-step-must-be-idempotent), and that a cluster
+> recovers work rather than spreading it. See
+> [known limitations](#known-limitations).
 
 ## A minimal workflow
 
@@ -481,6 +484,83 @@ An operator cancelling a workflow may be stopping it to fix forward, and an
 automatic rollback would destroy work they meant to keep. Whether that should be
 an explicit choice is #124, not settled by the engine's default.
 
+## Running on more than one node
+
+Every FlowDeck node runs the same code and polls the same database for work
+nobody is holding. There is **no leader and no election**: nodes are symmetric,
+and a node dying costs only the leases it held.
+
+```csharp
+builder.Services.AddSingleton(new ClusterOptions
+{
+    NodeId = Environment.MachineName,          // defaults to machine:process
+    LeaseDuration = TimeSpan.FromSeconds(30),
+    RenewalInterval = TimeSpan.FromSeconds(10),
+    PollInterval = TimeSpan.FromSeconds(5),
+});
+```
+
+A node claims an instance by writing its id and a lease expiry onto the record,
+and renews while it works. An expired lease is what an orphan *is* — claiming
+and orphan detection are one mechanism rather than two that must agree.
+
+### This is recovery, not load balancing
+
+`StartAsync` still runs the workflow **inline, on the node that received the
+request**, exactly as it always has. The dispatcher exists for work whose node
+died, and for suspended instances waiting to be continued.
+
+An instance started on a busy node stays on that node. Adding nodes adds
+resilience, not throughput for work already in flight.
+
+### A lapsed lease can cause a duplicate step execution
+
+The dangerous case is a lease expiring while its owner is **still working** — a
+slow step, a paused process, a clock that jumped. Two nodes then believe they
+own the instance.
+
+Every checkpoint is guarded by the same concurrency token that protects any
+write, so the node that lost its lease also loses the race to save and stops.
+
+**That bounds the damage; it does not prevent it.** Both nodes may have
+*executed* the same step before either tried to write. Fencing means at most one
+of them records progress, not that the step ran once.
+
+So the requirement retry already imposes now has a second reason behind it: a
+step that may run twice **must be idempotent**. See
+[Your step must be idempotent](#your-step-must-be-idempotent) — everything there
+applies to lease expiry as well as to retry.
+
+If a step cannot be made idempotent, run one node.
+
+### Nodes assume roughly agreed clocks
+
+Lease expiry is compared against **each node's own clock**, not the database's.
+FlowDeck's store depends only on `EntityFrameworkCore.Relational`, and there is
+no portable way to ask for a server timestamp across SQLite, PostgreSQL and SQL
+Server without provider-specific SQL.
+
+A node whose clock runs fast will reclaim work that is still running. Run NTP.
+
+### Tuning the lease
+
+| Setting | Too small | Too large |
+| --- | --- | --- |
+| `LeaseDuration` | healthy work gets stolen | recovery after a crash waits |
+| `RenewalInterval` | needless database writes | a slow node loses its lease |
+| `PollInterval` | every node hammers the database | abandoned work sits longer |
+
+`RenewalInterval` must be **shorter** than `LeaseDuration`, or a healthy node
+loses its lease before it can renew. FlowDeck rejects that at startup rather
+than producing a cluster that thrashes and looks like a network problem.
+
+### Shutting a node down
+
+A node that stops **gracefully** hands its leases back, so a peer can pick the
+work up immediately rather than waiting out the lease. A node that is killed
+does not — and the lease lapsing is the backstop that makes correctness
+independent of the graceful path ever running.
+
 ## Querying and cancelling
 
 ```csharp
@@ -585,13 +665,19 @@ caught separately from faults thrown by your step code.
 | Limitation | Tracked by |
 | --- | --- |
 | A retry backoff blocks the calling task | #39 |
-| An instance left `Running` by a crash is never resumed | #39 |
-| A rollback interrupted by a crash does not resume | #39 |
+| A lapsed lease can cause a duplicate step execution | [above](#a-lapsed-lease-can-cause-a-duplicate-step-execution) |
+| Recovery is not load balancing: a started instance stays on its node | — |
 | Cancelling an instance does not roll it back | #124 |
-| Single node only | #39 |
 | A suspended instance cannot be resumed over HTTP | #68 |
 | No authentication on the API | #42 |
 | Definitions are C# classes registered at startup | #40 |
+
+Three earlier entries have gone because M6 fixed them: an instance left `Running`
+by a crash is now recovered by another node's dispatcher, so are interrupted
+rollbacks, and FlowDeck is no longer single-node.
+
+What replaced them is narrower and worth reading twice: recovery is **not**
+load balancing, and a lapsed lease can run a step twice.
 
 Earlier entries here claimed instances were lost on restart, that there was no
 HTTP API, and that input was not persisted. All three were fixed in M2 and M3

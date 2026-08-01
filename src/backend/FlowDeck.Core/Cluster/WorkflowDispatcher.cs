@@ -80,9 +80,24 @@ public sealed class WorkflowDispatcher(
         return ran;
     }
 
+    /// <summary>Polls this node failed to complete, since it started.</summary>
+    /// <remarks>
+    /// Surfaced rather than only logged, so a health check or a test can tell
+    /// "idle because there is no work" from "idle because every poll is
+    /// failing". The two look identical from outside.
+    /// </remarks>
+    public int FailedPolls { get; private set; }
+
     /// <summary>
     /// Polls until cancelled.
     /// </summary>
+    /// <remarks>
+    /// Survives a failing poll. The store being briefly unreachable is an
+    /// ordinary event — a failover, a restart, a network blip — and a loop that
+    /// exited on the first one would leave the node permanently idle while
+    /// still reporting itself alive. That is the same failure as a dispatcher
+    /// dying on a bad instance, one level up.
+    /// </remarks>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(options.PollInterval, this.timeProvider);
@@ -99,7 +114,62 @@ public sealed class WorkflowDispatcher(
                 // The host is stopping. Not a failure.
                 return;
             }
+#pragma warning disable CA1031 // Deliberately broad: see below.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                // Any store failure, not just FlowDeckException. A provider is
+                // free to throw its own type - a SqlException, a socket error -
+                // and this loop cannot enumerate them. Narrowing the catch
+                // would mean the one exception nobody anticipated stops every
+                // node's recovery until someone restarts them.
+                this.FailedPolls++;
+            }
         }
+    }
+
+    /// <summary>
+    /// Hands back every lease this node holds.
+    /// </summary>
+    /// <remarks>
+    /// For a graceful stop — a rolling deploy, an operator restarting a node.
+    /// Without it a peer waits out the full lease before touching work this
+    /// node has already abandoned, so recovery is as slow as the lease is long
+    /// for the one case where it did not need to be.
+    ///
+    /// <para>
+    /// Takes its own <see cref="CancellationToken"/> rather than the stopping
+    /// one: the host has already signalled that token, so passing it would
+    /// cancel the very releases this exists to perform.
+    /// </para>
+    ///
+    /// <para>
+    /// Best-effort. A node killed outright never reaches this, and the lease
+    /// remains the backstop — which is why lapsing must keep working whether or
+    /// not draining does.
+    /// </para>
+    /// </remarks>
+    /// <returns>How many leases were released.</returns>
+    public async Task<int> DrainAsync(CancellationToken cancellationToken = default)
+    {
+        // Everything this node holds, whatever its lease says: the point is to
+        // hand back work in progress, and asOf is what decides claimability,
+        // not ownership.
+        var held = await store
+            .FindClaimableAsync(DateTimeOffset.MaxValue, int.MaxValue, cancellationToken)
+            .ConfigureAwait(false);
+
+        var released = 0;
+
+        foreach (var record in held.Where(record => record.OwnerNodeId == options.NodeId))
+        {
+            if (await this.claims.TryReleaseAsync(record.Id, cancellationToken).ConfigureAwait(false))
+            {
+                released++;
+            }
+        }
+
+        return released;
     }
 
     private async Task RunClaimedAsync(WorkflowInstanceRecord claimed, CancellationToken cancellationToken)
