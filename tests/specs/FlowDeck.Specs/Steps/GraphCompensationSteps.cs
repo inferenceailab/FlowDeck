@@ -14,10 +14,6 @@ public sealed class GraphCompensationSteps(EngineContext world)
     /// <summary>Compensating actions that ran, in the order they ran.</summary>
     private readonly List<string> undone = [];
 
-    /// <summary>Signalled by a step once it has completed, to pin the order.</summary>
-    private readonly Dictionary<string, TaskCompletionSource> completed =
-        new(StringComparer.Ordinal);
-
     [Given("a fork where one branch throws and the other completed a compensated step")]
     public void GivenAForkWithOneThrowingBranch() =>
         world.Declare("sibling-undo", 1, builder => builder
@@ -29,10 +25,7 @@ public sealed class GraphCompensationSteps(EngineContext world)
                 bad => bad.AddStep("charge", () => new SpecSteps.Throwing(world.Log, "charge"))));
 
     [Given("three compensated steps that completed in a known order")]
-    public void GivenThreeStepsCompletingInAKnownOrder()
-    {
-        this.completed["a1"] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        this.completed["b1"] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    public void GivenThreeStepsCompletingInAKnownOrder() =>
 
         // The order is enforced, not hoped for. Two arms racing would make the
         // expected rollback order a coin toss, and a scenario that asserts an
@@ -41,20 +34,14 @@ public sealed class GraphCompensationSteps(EngineContext world)
             .AddStep("split", () => new SpecSteps.Recording(world.Log, "split"))
             .Fork(
                 first => first
-                    .AddStep("a1", () => new Signalling(world.Log, "a1", this.completed["a1"], waitFor: null))
+                    .AddStep("a1", () => new AfterHistory(world, "a1", waitFor: null))
                     .WithCompensation(() => new Undoing(this.undone, "a1"))
-                    .AddStep(
-                        "a2",
-                        () => new Signalling(world.Log, "a2", signal: null, waitFor: this.completed["b1"].Task))
+                    .AddStep("a2", () => new AfterHistory(world, "a2", waitFor: "b1"))
                     .WithCompensation(() => new Undoing(this.undone, "a2")),
                 second => second
-                    .AddStep(
-                        "b1",
-                        () => new Signalling(
-                            world.Log, "b1", this.completed["b1"], waitFor: this.completed["a1"].Task))
+                    .AddStep("b1", () => new AfterHistory(world, "b1", waitFor: "a1"))
                     .WithCompensation(() => new Undoing(this.undone, "b1")))
             .AddStep("boom", () => new SpecSteps.Throwing(world.Log, "boom")));
-    }
 
     [Given("a conditional workflow that took the in-stock branch")]
     public void GivenAConditionalWorkflowThatTookInStock() =>
@@ -194,34 +181,46 @@ public sealed class GraphCompensationSteps(EngineContext world)
     }
 
     /// <summary>
-    /// Waits for another step to finish, runs, then reports that it has.
+    /// Waits until another step is recorded in history, then runs.
     /// </summary>
     /// <remarks>
-    /// Turns two concurrent arms into a known completion order without making
-    /// them sequential: the arms still overlap, they just finish in a stated
-    /// order, which is what a scenario about ordering needs to assert against.
+    /// Waits on <b>history</b>, not on a signal the other step raises. A signal
+    /// fires when the other step body returns, which is before its checkpoint
+    /// is written - so the two steps would race for the writer and the recorded
+    /// completion order would be whichever won. That version passed on a
+    /// developer machine and failed on CI, which is exactly the failure a test
+    /// about ordering must not have.
+    ///
+    /// <para>
+    /// The arms still overlap: this waits for a condition, it does not run the
+    /// branches one after another.
+    /// </para>
     /// </remarks>
-    private sealed class Signalling(
-        List<string> log,
-        string name,
-        TaskCompletionSource? signal,
-        Task? waitFor) : IStep
+    private sealed class AfterHistory(EngineContext world, string name, string? waitFor) : IStep
     {
         public async ValueTask<Outcome> ExecuteAsync(
             IStepContext context,
             CancellationToken cancellationToken = default)
         {
-            if (waitFor is not null)
+            ArgumentNullException.ThrowIfNull(context);
+
+            for (var attempt = 0; waitFor is not null && attempt < 400; attempt++)
             {
-                await waitFor.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+                var history = await world.Store.GetHistoryAsync(context.InstanceId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (history.Any(entry => entry.StepName == waitFor))
+                {
+                    break;
+                }
+
+                await Task.Delay(25, cancellationToken).ConfigureAwait(false);
             }
 
-            lock (log)
+            lock (world.Log)
             {
-                log.Add(name);
+                world.Log.Add(name);
             }
-
-            signal?.TrySetResult();
 
             return Outcome.Next;
         }
