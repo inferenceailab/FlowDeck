@@ -269,6 +269,21 @@ public sealed class EfCoreWorkflowStore(
             query = query.Where(instance => instance.DefinitionId == definitionId);
         }
 
+        if (filter.DefinitionVersion is { } definitionVersion)
+        {
+            query = query.Where(instance => instance.DefinitionVersion == definitionVersion);
+        }
+
+        if (filter.ActiveOnly)
+        {
+            // Spelled out rather than "not terminal", so a status added later
+            // is not silently treated as active - which would leave a version
+            // nobody can retire. Two comparisons rather than a Contains over a
+            // list, because that translates to SQL every provider supports.
+            query = query.Where(instance =>
+                instance.Status == InstanceStatus.Running || instance.Status == InstanceStatus.Suspended);
+        }
+
         return query;
     }
 
