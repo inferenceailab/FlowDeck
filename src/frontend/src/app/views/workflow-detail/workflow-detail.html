@@ -1,0 +1,127 @@
+<div aria-live="polite" [attr.aria-busy]="state().kind === 'loading'">
+  @switch (state().kind) {
+    @case ('loading') {
+      <p class="state state-loading" i18n>Loading workflow…</p>
+    }
+
+    @case ('error') {
+      <div class="state state-error" role="alert">
+        <p><strong i18n>Could not load this workflow.</strong></p>
+        <p class="state-detail">{{ errorMessage() }}</p>
+        <button type="button" (click)="load()" i18n>Try again</button>
+      </div>
+    }
+
+    @case ('ready') {
+      <header class="detail-header">
+        <h1>
+          {{ definition()!.id }}
+          <span class="version" i18n>v{{ definition()!.version }}</span>
+        </h1>
+
+        <!--
+          Only when the workflow takes input. "Takes nothing as input" is a row
+          an operator has to read to learn there is nothing to read.
+        -->
+        @if (definition()!.inputTypeName) {
+          <p class="definition-input" i18n>Takes {{ definition()!.inputTypeName }} as input.</p>
+        }
+      </header>
+
+      <h2 i18n>Shape</h2>
+
+      <ng-container *ngTemplateOutlet="shape; context: { $implicit: definition()!.steps }" />
+    }
+  }
+</div>
+
+<!--
+  The shape is a tree of nested sequences, so the renderer recurses. A template
+  rather than the component rendering itself: a standalone component cannot list
+  itself in `imports`, and ngTemplateOutlet is the shape Angular does support.
+-->
+<ng-template #shape let-list>
+  <ol class="shape">
+    @for (step of asSteps(list); track step.name) {
+      <li class="shape-step">
+        <div class="step-heading">
+          <span class="step-name">{{ step.name }}</span>
+
+          <!--
+            Only from a second attempt. Every step of an ordinary workflow would
+            otherwise carry the badge, adding noise to the common case to serve
+            the rare one — the same rule the instance timeline follows.
+
+            The count, not just the fact: "retries" alone leaves an operator
+            unable to tell one extra attempt from twenty.
+          -->
+          @if (retries(step)) {
+            <span class="step-retry" i18n>retries, up to {{ step.maxAttempts }} attempts</span>
+          }
+
+          <!--
+            "has an undo", not "compensated". On an instance that word means
+            rollback already ran; a definition has not run at all.
+          -->
+          @if (step.hasCompensation) {
+            <span class="step-undo" i18n>has an undo</span>
+          }
+        </div>
+
+        @if (step.branches.length > 0) {
+          <div class="branch-set">
+            <!--
+              Which kind of split this is, in words. A fork and a choice are
+              drawn identically and mean opposite things, so leaving the
+              difference to a colour or a glyph would lose it for the readers
+              who most need it (ADR-0016).
+
+              Read off the first arm: a step cannot mix a choice with a fork —
+              the builder rejects it at declaration time — so one arm speaks for
+              all of them.
+            -->
+            @if (step.branches[0].isParallel) {
+              <p class="branch-rule" i18n>Every branch runs, at the same time.</p>
+            } @else {
+              <!--
+                "or none" is not hedging. A choice with no matching case
+                continues past the split rather than failing (ADR-0024), and a
+                reader who assumed otherwise would misjudge every workflow that
+                has no catch-all.
+              -->
+              <p class="branch-rule" i18n>One branch is taken, or none.</p>
+            }
+
+            <!--
+              Unordered, unlike the steps. A fork's arms run at the same time,
+              and numbering them would say one goes first.
+            -->
+            <ul class="branches">
+              @for (branch of step.branches; track branch.name) {
+                <li class="branch">
+                  <p class="branch-heading">
+                    <span class="branch-name">{{ branch.name }}</span>
+
+                    <!--
+                      That it is decided by data, never what the data has to
+                      say. A condition is compiled code the API cannot describe,
+                      and inventing a description here would render a guess as
+                      fact.
+                    -->
+                    @if (branch.isConditional) {
+                      <span class="branch-condition" i18n>taken when the data matches</span>
+                    }
+                  </p>
+
+                  <ng-container
+                    *ngTemplateOutlet="shape; context: { $implicit: branch.steps }"
+                  />
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      </li>
+    }
+  </ol>
+</ng-template>
