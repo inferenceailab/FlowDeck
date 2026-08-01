@@ -56,3 +56,31 @@ public sealed class DefinitionNotFoundException : FlowDeckException
     /// </summary>
     public int? Version { get; }
 }
+
+/// <summary>
+/// Thrown when a definition version is retired while instances still hold it.
+/// </summary>
+/// <remarks>
+/// Carries the count rather than only refusing. "Refused" on its own leaves an
+/// operator with no next step; the number tells them whether to wait or to go
+/// and cancel something (ADR-0026 decision 2).
+/// </remarks>
+public sealed class DefinitionInUseException : FlowDeckException
+{
+    public DefinitionInUseException(string definitionId, int version, int activeInstances)
+        : base(
+            $"Workflow definition '{definitionId}' version {version} cannot be retired: "
+            + $"{activeInstances} instance(s) are still running it.")
+    {
+        this.DefinitionId = definitionId;
+        this.Version = version;
+        this.ActiveInstances = activeInstances;
+    }
+
+    public string DefinitionId { get; }
+
+    public int Version { get; }
+
+    /// <summary>How many non-terminal instances are still holding the version.</summary>
+    public int ActiveInstances { get; }
+}

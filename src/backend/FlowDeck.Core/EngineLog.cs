@@ -226,4 +226,23 @@ internal static partial class EngineLog
         string stepName,
         string? errorType,
         string? errorMessage);
+
+    /// <summary>
+    /// A definition version was removed from the registry.
+    /// </summary>
+    /// <remarks>
+    /// Information, and it carries how many instances ever ran it. Retirement is
+    /// rare, deliberate and irreversible without a redeploy, so the entry an
+    /// operator will go looking for afterwards should say what it affected.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 1007,
+        EventName = "DefinitionRetired",
+        Level = LogLevel.Information,
+        Message = "Definition {DefinitionId} v{Version} retired; {InstancesEverRun} instance(s) had run it.")]
+    public static partial void DefinitionRetired(
+        this ILogger logger,
+        string definitionId,
+        int version,
+        int instancesEverRun);
 }
