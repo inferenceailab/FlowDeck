@@ -132,6 +132,33 @@ public sealed class WorkflowInstance
     public DateTimeOffset? LeaseExpiresAt { get; internal set; }
 
     /// <summary>
+    /// Every node this instance is currently at.
+    /// </summary>
+    /// <remarks>
+    /// Empty for a terminal instance, and one entry for an in-flight linear one.
+    /// It becomes plural when a fork is in flight (#164).
+    ///
+    /// <para>
+    /// Derived from the position rather than the other way round, for now. The
+    /// engine's loop is still index-driven, so the index is what it maintains
+    /// and this is projected from it at each checkpoint. #164 inverts that: the
+    /// set becomes what the loop advances and the index becomes the projection
+    /// the doc comment on <see cref="WorkflowInstanceRecord.CurrentStepIndex"/>
+    /// describes. The durable shape is settled first so the inversion is a
+    /// change to the engine alone, not to every provider at once.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<ActiveNode> ActiveNodes =>
+
+        // A failed instance keeps CurrentStepName pointing at the step that
+        // failed, so operators can still see where it stopped. That is a
+        // gravestone, not a position: checking terminal first is what keeps it
+        // from being reported as somewhere the instance is still running.
+        this.IsTerminal || this.CurrentStepName is null
+            ? []
+            : [new ActiveNode(this.CurrentStepName, this.StepAttempts, BranchPath: [])];
+
+    /// <summary>
     /// Whether this instance has reached a state from which it will not
     /// continue on its own.
     /// </summary>
@@ -157,6 +184,7 @@ public sealed class WorkflowInstance
         FailedStepName = this.FailedStepName,
         ErrorType = this.ErrorType,
         ErrorMessage = this.ErrorMessage,
+        ActiveNodes = this.ActiveNodes,
         Data = data.Snapshot(),
         Input = input,
         Revision = this.Revision,
@@ -183,5 +211,11 @@ public sealed class WorkflowInstance
             // Error stays null: an exception object cannot be reconstructed
             // from stored text, and pretending otherwise would produce a
             // fabricated stack trace.
+            //
+            // ActiveNodes is not read either, because it is still derived from
+            // the position restored above and re-deriving it gives the same
+            // answer. That stops being true in #164, when the set is what the
+            // engine advances - at which point this must read the stored set or
+            // a recovered fork resumes down one branch only.
         };
 }

@@ -13,6 +13,80 @@ namespace FlowDeck.Core.Persistence;
 /// Immutable: a save produces a new record with an incremented
 /// <see cref="Revision"/> rather than mutating the caller's copy.
 /// </remarks>
+/// <summary>
+/// One place an instance is currently executing.
+/// </summary>
+/// <param name="StepName">
+/// The step this node sits on. Names are unique across the whole graph (#162),
+/// so a name identifies a node without needing a path.
+/// </param>
+/// <param name="Attempts">
+/// Executions of this step so far, including the one in progress. Per node
+/// rather than per instance, because a fork whose branches both retry has two
+/// independent counts (ADR-0024).
+/// </param>
+/// <param name="BranchPath">
+/// The branches taken to reach this node, outermost first, or empty for a node
+/// on the top-level sequence.
+/// </param>
+/// <remarks>
+/// Carries the step <b>name</b> rather than an index. An index only means
+/// something relative to a sequence, and a node inside a branch is not in the
+/// top-level one — so an index would need a path to interpret it, which is the
+/// name in a less readable form.
+/// </remarks>
+public sealed record ActiveNode(string StepName, int Attempts, IReadOnlyList<string> BranchPath)
+{
+    /// <summary>A node on the top-level sequence, on its first attempt.</summary>
+    /// <remarks>
+    /// A factory rather than a second constructor. Providers serialise this type
+    /// as JSON, and a record with two constructors gives the deserialiser no way
+    /// to choose between them - it refuses rather than guessing. Annotating one
+    /// with <c>[JsonConstructor]</c> would work and would put a serialisation
+    /// concern on a domain type to buy shorter test setup.
+    /// </remarks>
+    public static ActiveNode At(string stepName) => new(stepName, Attempts: 0, BranchPath: []);
+
+    /// <summary>
+    /// Structural equality, including the branch path element by element.
+    /// </summary>
+    /// <remarks>
+    /// The compiler-generated version compares <see cref="BranchPath"/> by
+    /// reference, because that is what <see cref="IReadOnlyList{T}"/> does. Two
+    /// nodes describing the same position would then be unequal whenever the
+    /// lists were separate objects - which is always, once one side has been
+    /// through a store.
+    ///
+    /// <para>
+    /// That is not only a test inconvenience. Anything comparing an instance's
+    /// position to the one it last saw - a checkpoint deciding whether the set
+    /// moved, a client diffing two polls - would see a change on every read.
+    /// </para>
+    /// </remarks>
+    public bool Equals(ActiveNode? other) =>
+        other is not null
+        && string.Equals(this.StepName, other.StepName, StringComparison.Ordinal)
+        && this.Attempts == other.Attempts
+        && this.BranchPath.SequenceEqual(other.BranchPath, StringComparer.Ordinal);
+
+    public override int GetHashCode()
+    {
+        var hash = default(HashCode);
+
+        hash.Add(this.StepName, StringComparer.Ordinal);
+        hash.Add(this.Attempts);
+
+        // The path's contents, matching Equals. Hashing the list object would
+        // put equal nodes in different buckets and break every hashed lookup.
+        foreach (var branch in this.BranchPath)
+        {
+            hash.Add(branch, StringComparer.Ordinal);
+        }
+
+        return hash.ToHashCode();
+    }
+}
+
 public sealed record WorkflowInstanceRecord
 {
     public required Guid Id { get; init; }
@@ -23,14 +97,57 @@ public sealed record WorkflowInstanceRecord
 
     public required InstanceStatus Status { get; init; }
 
-    /// <summary>Zero-based index of the step the instance is positioned at.</summary>
+    /// <summary>
+    /// Zero-based index of the step the instance is positioned at.
+    /// </summary>
+    /// <remarks>
+    /// A <b>projection</b> of <see cref="ActiveNodes"/> since ADR-0024, kept
+    /// because the dashboard, the API and every existing consumer read it. It
+    /// describes a straight-line workflow exactly and a forked one only
+    /// partially — an instance at three places at once has no single index, and
+    /// this reports the first.
+    ///
+    /// <para>
+    /// Read <see cref="ActiveNodes"/> when the answer has to be right for a
+    /// graph. This field is retained for compatibility, not because it is
+    /// sufficient.
+    /// </para>
+    /// </remarks>
     public required int CurrentStepIndex { get; init; }
 
     /// <summary>How many times the current step has executed (ADR-0020).</summary>
+    /// <remarks>
+    /// Also a projection: attempts are counted per active node, because a fork
+    /// whose two branches are both retrying has two independent counts. This
+    /// reports the first node's.
+    /// </remarks>
     public int StepAttempts { get; init; }
 
     /// <summary>Step the instance is positioned at, or null once all have run.</summary>
     public string? CurrentStepName { get; init; }
+
+    /// <summary>
+    /// Every node this instance is currently at.
+    /// </summary>
+    /// <remarks>
+    /// The position ADR-0024 makes authoritative. One entry for a sequential
+    /// workflow; one per branch while a fork is in flight; empty once the
+    /// instance is terminal.
+    ///
+    /// <para>
+    /// Durable ahead of being authoritative. The engine still advances an index
+    /// and projects this from it (#163); #164 inverts that once branches
+    /// actually execute. Persisting the set first means the inversion changes
+    /// the engine alone rather than every store provider at the same time.
+    /// </para>
+    ///
+    /// <para>
+    /// Order is not significant — these are concurrent positions, not a
+    /// sequence — but a provider must return them in a stable order, so that
+    /// reading an unchanged instance twice does not appear to change it.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<ActiveNode> ActiveNodes { get; init; } = [];
 
     public required DateTimeOffset CreatedAt { get; init; }
 

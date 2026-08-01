@@ -361,6 +361,80 @@ public abstract class WorkflowStoreConformanceTests
     }
 
     [SkippableFact]
+    public async Task The_active_node_set_round_trips()
+    {
+        // #163. The set is the position once branches exist (ADR-0024), so a
+        // provider that dropped it would resume a forked instance at whichever
+        // single node the projection happened to name and silently abandon the
+        // others - a lost branch, not a visible error.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with
+        {
+            ActiveNodes =
+            [
+                new ActiveNode("audit", Attempts: 0, BranchPath: []),
+                new ActiveNode("charge", Attempts: 2, BranchPath: ["payment"]),
+                new ActiveNode("reserve", Attempts: 1, BranchPath: ["fulfilment", "warehouse"]),
+            ],
+        };
+
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+
+        // Every field of every node, not just the count. Attempts are per node
+        // because two branches retrying at once have two independent counts, and
+        // a provider that stored only the names would satisfy a count check.
+        Assert.Equal(record.ActiveNodes, loaded!.ActiveNodes);
+    }
+
+    [SkippableFact]
+    public async Task A_cleared_active_node_set_round_trips_as_empty()
+    {
+        // The clearing path, same reasoning as the attempt-count reset: a store
+        // that treated "empty" as "unset" and left the column alone would report
+        // a completed instance as still active at its last step.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with { ActiveNodes = [ActiveNode.At("charge")] };
+        await store.CreateAsync(record);
+
+        var loaded = await store.FindAsync(record.Id);
+
+        // Not vacuous: empty is the default, so a store that never persisted the
+        // field would pass the clearing check while failing this one.
+        Assert.Single(loaded!.ActiveNodes);
+
+        await store.SaveAsync(loaded with { ActiveNodes = [] }, []);
+
+        Assert.Empty((await store.FindAsync(record.Id))!.ActiveNodes);
+    }
+
+    [SkippableFact]
+    public async Task The_active_node_set_comes_back_in_a_stable_order()
+    {
+        // Order is not significant - these are concurrent positions - but it has
+        // to be *stable*, or two reads of an unchanged instance differ and a
+        // caller diffing them sees a change that did not happen.
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord() with
+        {
+            ActiveNodes = [ActiveNode.At("c"), ActiveNode.At("a"), ActiveNode.At("b")],
+        };
+
+        await store.CreateAsync(record);
+
+        var first = await store.FindAsync(record.Id);
+        var second = await store.FindAsync(record.Id);
+
+        Assert.Equal(first!.ActiveNodes, second!.ActiveNodes);
+
+        // Declaration order, specifically. A provider that sorted would also be
+        // stable, but resuming would then re-enter branches in an order the
+        // author never wrote, which reads as arbitrary in a timeline.
+        Assert.Equal(["c", "a", "b"], first.ActiveNodes.Select(node => node.StepName));
+    }
+
+    [SkippableFact]
     public async Task Ownership_and_lease_round_trip()
     {
         // #143. Third field in a row to reach this suite because a provider

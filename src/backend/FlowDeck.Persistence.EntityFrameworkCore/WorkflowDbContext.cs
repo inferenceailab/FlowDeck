@@ -57,6 +57,25 @@ public sealed class StoredInstance
     /// <summary>When that node's claim lapses if not renewed.</summary>
     public DateTimeOffset? LeaseExpiresAt { get; set; }
 
+    /// <summary>
+    /// The instance's active nodes, as JSON (#163).
+    /// </summary>
+    /// <remarks>
+    /// A JSON column rather than a child table: active nodes are read and
+    /// written only as a whole set, never queried individually, so a table
+    /// would add a join and a migration for no query it serves.
+    ///
+    /// <para>
+    /// Serialised with plain <c>System.Text.Json</c>, not
+    /// <c>WorkflowDataSerializer</c>. That serialiser carries a type allow-list
+    /// because workflow data holds arbitrary author types resolved by name on
+    /// read (ADR-0014). An active node is a closed, engine-owned shape with no
+    /// polymorphism — there is no type name to resolve, so there is nothing for
+    /// an allow-list to protect against.
+    /// </para>
+    /// </remarks>
+    public string? ActiveNodesJson { get; set; }
+
     /// <summary>Optimistic concurrency token.</summary>
     public int Revision { get; set; }
 }
