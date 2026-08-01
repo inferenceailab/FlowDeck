@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FlowDeck.Core.Persistence;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +27,7 @@ public sealed class WorkflowEngine
     private readonly Random? random;
     private readonly ILogger<WorkflowEngine> logger;
     private readonly EngineMetrics metrics;
+    private readonly EngineTracing tracing;
 
     public WorkflowEngine(
         WorkflowRegistry registry,
@@ -33,7 +35,8 @@ public sealed class WorkflowEngine
         IWorkflowStore? store = null,
         Random? random = null,
         ILogger<WorkflowEngine>? logger = null,
-        EngineMetrics? metrics = null)
+        EngineMetrics? metrics = null,
+        EngineTracing? tracing = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -61,6 +64,11 @@ public sealed class WorkflowEngine
         // default. Injectable so a test can listen to its own meter rather
         // than to every engine in the process.
         this.metrics = metrics ?? EngineMetrics.Default;
+
+        // Same shape as metrics, and free for the same reason: StartActivity
+        // returns null when no listener is registered, so a host that exports
+        // nothing pays a null check per step.
+        this.tracing = tracing ?? EngineTracing.Default;
     }
 
     /// <summary>
@@ -134,12 +142,20 @@ public sealed class WorkflowEngine
 
         using var scope = this.Scope(instance);
 
+        // Continues the caller's trace. StartAsync runs inline on the request
+        // thread, so an instance started over HTTP hangs off that request's
+        // span and a slow endpoint appears in the same trace as the step
+        // responsible for it.
+        using var activity = this.tracing.StartInstance(instance, root: false);
+
         // After the record exists, so an entry saying an instance started is
         // never about one an operator cannot then look up.
         this.logger.InstanceStarted(instance.DefinitionId, instance.DefinitionVersion);
         this.metrics.InstanceStarted(instance);
 
         await this.RunAsync(instance, steps, data, input, resumeFrom: [], cancellationToken).ConfigureAwait(false);
+
+        MarkOutcome(activity, instance);
 
         return instance;
     }
@@ -171,6 +187,12 @@ public sealed class WorkflowEngine
 
         using var scope = this.Scope(instance);
 
+        // A root, unlike a start. A resumed instance has no caller and no
+        // inbound trace context - a dispatcher recovering abandoned work is not
+        // the cause of that work, and hanging the run off a poll would put the
+        // wrong cause in the trace.
+        using var activity = this.tracing.StartInstance(instance, root: true);
+
         this.logger.InstanceResumed(instance.DefinitionId, instance.CurrentStepName);
 
         // The stored set, not the index. A forked instance is at several places
@@ -180,7 +202,28 @@ public sealed class WorkflowEngine
         await this.RunAsync(instance, steps, data, record.Input, record.ActiveNodes, cancellationToken)
             .ConfigureAwait(false);
 
+        MarkOutcome(activity, instance);
+
         return instance;
+    }
+
+    /// <summary>
+    /// Marks the instance span according to how the run ended.
+    /// </summary>
+    /// <remarks>
+    /// Errors only. A span with no explicit status is <c>Unset</c>, which is
+    /// what every backend treats as "fine" - setting <c>Ok</c> on success would
+    /// say the same thing twice and would then have to be kept in step with
+    /// every terminal state the engine gains.
+    /// </remarks>
+    private static void MarkOutcome(Activity? activity, WorkflowInstance instance)
+    {
+        if (instance.Status is InstanceStatus.Failed
+            or InstanceStatus.Compensated
+            or InstanceStatus.CompensationFailed)
+        {
+            EngineTracing.MarkFailed(activity, instance.ErrorType, instance.ErrorMessage);
+        }
     }
 
     /// <summary>Retrieves an instance by id.</summary>
@@ -640,6 +683,11 @@ public sealed class WorkflowEngine
 
                 engine.logger.StepStarted(step.Name, attempt);
 
+                // Per attempt, not per step. A step retried three times is
+                // three executions and three spans, which is what makes a
+                // retried step's cost visible instead of averaged away.
+                using var activity = engine.tracing.StartStep(step.Name, attempt, cursor.BranchPath);
+
                 var context = new StepContext(instance.Id, step.Name, data, input);
                 var result = await StepExecutor
                     .ExecuteAsync(step.Factory(), context, cancellationToken)
@@ -652,6 +700,14 @@ public sealed class WorkflowEngine
                     result.Status,
                     (finishedAt - startedAt).TotalMilliseconds,
                     attempt);
+
+                if (result.Status == StepStatus.Failed)
+                {
+                    EngineTracing.MarkFailed(
+                        activity,
+                        result.Error?.GetType().Name,
+                        result.Error?.Message);
+                }
 
                 // Recorded for every execution, including failures and
                 // suspensions. History that only covered successes would be

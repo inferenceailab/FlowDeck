@@ -91,6 +91,9 @@ public sealed class EngineContext
     /// </remarks>
     public MeterCapture Metrics { get; } = new();
 
+    /// <summary>The spans the engine opened, for the M8 scenarios.</summary>
+    public ActivityCapture Spans { get; } = new();
+
     /// <summary>Builds an engine over this scenario's declarations and store.</summary>
     public WorkflowEngine Engine(TimeProvider? clock = null) =>
         new(
@@ -98,7 +101,8 @@ public sealed class EngineContext
             clock,
             this.Store,
             logger: new RecordingLogger<WorkflowEngine>(this.Logger),
-            metrics: this.Metrics.Metrics);
+            metrics: this.Metrics.Metrics,
+            tracing: this.Spans.Tracing);
 
     /// <summary>Builds an engine that was given no logger at all.</summary>
     /// <remarks>
@@ -121,7 +125,8 @@ public sealed class EngineContext
             this.BuildRegistry(),
             store: this.Store,
             logger: new RecordingLogger<WorkflowEngine>(this.Logger),
-            metrics: this.Metrics.Metrics);
+            metrics: this.Metrics.Metrics,
+            tracing: this.Spans.Tracing);
 
     /// <summary>Runs an action, keeping any exception for a later Then.</summary>
     public async Task CapturingErrorAsync(Func<Task> action)
