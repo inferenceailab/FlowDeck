@@ -477,6 +477,20 @@ public sealed class WorkflowEngine
                 startIndex = resumeAt;
             }
 
+            // Which arm this is, on every entry the sequence goes on to write.
+            //
+            // A scope rather than a field on each step event, so a step on the
+            // top-level sequence carries no branch at all instead of an empty
+            // one that a reader has to interpret. Async-local, so a fork's arms
+            // inherit the instance scope and diverge from each other rather than
+            // relabelling one another's entries (ADR-0024 made this concurrent).
+            using var branchScope = topLevel
+                ? null
+                : engine.logger.BeginScope(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["Branch"] = string.Join('/', branchPath),
+                });
+
             // A fork opens its arms' cursors before it starts them, so the
             // checkpoint recording the fork already names every arm. An arm that
             // opened its own cursor here would not exist until it ran, and a
@@ -606,11 +620,22 @@ public sealed class WorkflowEngine
             while (true)
             {
                 var startedAt = engine.timeProvider.GetUtcNow();
+                var attempt = cursor.Attempts + 1;
+
+                engine.logger.StepStarted(step.Name, attempt);
 
                 var context = new StepContext(instance.Id, step.Name, data, input);
                 var result = await StepExecutor
                     .ExecuteAsync(step.Factory(), context, cancellationToken)
                     .ConfigureAwait(false);
+
+                var finishedAt = engine.timeProvider.GetUtcNow();
+
+                engine.logger.StepFinished(
+                    step.Name,
+                    result.Status,
+                    (finishedAt - startedAt).TotalMilliseconds,
+                    attempt);
 
                 // Recorded for every execution, including failures and
                 // suspensions. History that only covered successes would be
@@ -622,7 +647,11 @@ public sealed class WorkflowEngine
                     Sequence = 0, // assigned by the store
                     StepName = step.Name,
                     StartedAt = startedAt,
-                    CompletedAt = engine.timeProvider.GetUtcNow(),
+
+                    // The same reading the log entry above used, rather than a
+                    // second call to the clock. Two readings would let history
+                    // and the log disagree about one execution's duration.
+                    CompletedAt = finishedAt,
                     Status = result.Status,
 
                     // The count holds attempts already finished, so the one just
@@ -650,6 +679,15 @@ public sealed class WorkflowEngine
                         await this.CheckpointAsync([entry], cancellationToken).ConfigureAwait(false);
 
                         var delay = step.RetryPolicy.DelayBefore(cursor.Attempts + 1, engine.random);
+
+                        // Says how long, not merely that it will happen again. A
+                        // workflow backing off and a workflow that has hung look
+                        // identical from outside without this.
+                        engine.logger.StepRetrying(
+                            step.Name,
+                            attempt,
+                            result.Error?.GetType().Name,
+                            delay.TotalMilliseconds);
 
                         if (delay > TimeSpan.Zero)
                         {
@@ -1061,10 +1099,20 @@ public sealed class WorkflowEngine
             if (result.Status == StepStatus.Failed)
             {
                 failures++;
+
+                // One per failed action rather than a summary at the end.
+                // Rollback continues past a failure (ADR-0021), so an instance
+                // can leave several steps un-undone, and which ones is the
+                // whole content of the operator's next hour.
+                this.logger.RollbackFailed(
+                    name,
+                    result.Error?.GetType().Name,
+                    result.Error?.Message);
             }
             else
             {
                 compensated++;
+                this.logger.StepRolledBack(name);
             }
 
             // Recorded like any other execution, so "one of two undone" is a
