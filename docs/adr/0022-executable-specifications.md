@@ -83,15 +83,44 @@ historical record rather than a live contract.
 Where a scenario's *wording* has been adjusted this way, the change is to
 vocabulary only, never to what is being asserted.
 
-### 5. Backend only, for now
+### 5. The frontend uses vitest-cucumber, in the same Vitest run
 
-M4's 11 scenarios are Angular behaviour — "Loading state is shown while
-fetching" — and a .NET runner cannot execute them. They remain covered by the 72
-Vitest specs, which name them in comments: precisely the unverified mirroring
-this ADR removes everywhere else.
+**Decided by the maintainer, 2026-08-01.**
 
-That inconsistency is real and is **tracked as #135** rather than left implied by
-its absence.
+A .NET runner cannot execute "Loading state is shown while fetching", so the 13
+frontend scenarios use [`@amiceli/vitest-cucumber`](https://www.npmjs.com/package/@amiceli/vitest-cucumber)
+inside the existing `ng test` run. No second test stack, no browser driver, and
+`npm test` still runs everything.
+
+The same premise was checked first: a scenario present in a `.feature` file with
+no `Scenario(...)` block raises `ScenarioNotCalledError`, fails the suite, and
+exits non-zero.
+
+**A constraint worth knowing before writing one.** `vitest-cucumber` runs each
+step as its own Vitest test, and Angular resets `TestBed` between tests. A
+`ComponentFixture` created in a Given is already torn down by the time the When
+runs — `detectChanges()` renders into nothing and the Then sees an empty DOM,
+while every step reports green.
+
+Measured, not assumed: a probe rendering in one step and asserting in the next
+fails, and `teardown: { destroyAfterEach: false }` does not change it.
+
+So frontend steps follow one shape, and `harness.ts` exists to make it readable:
+
+- **Given** records what the world contains, as plain values.
+- **When** builds the component, renders it, answers its requests, performs the
+  interaction, and captures the resulting DOM.
+- **Then** asserts against what the When captured.
+
+Plain values and detached DOM nodes survive the reset; Angular objects do not.
+This reads slightly oddly for a Given like "a suspended instance is displayed",
+which records rather than displays — and that is the honest trade for scenarios
+that assert on something real.
+
+The alternative, `@cucumber/cucumber` with Playwright, would have avoided the
+constraint by driving a real browser. Rejected as a second test stack and a
+browser download in CI, for scenarios that are about rendering rather than about
+end-to-end behaviour.
 
 ## Consequences
 
@@ -110,6 +139,12 @@ its absence.
   unit test.
 - Feature files are readable by someone who does not read C#. That was always
   claimed of the issue bodies and was never true of anything in the repository.
+- Two Gherkin runners now exist in one repository, with different step syntax
+  and different constraints. Unavoidable given a .NET backend and an Angular
+  frontend, and the cost is that "how do I add a scenario" has two answers.
+- The frontend scenarios reach the DOM but not a browser. They assert what a
+  component renders, not what a user sees after CSS and layout. Anything that
+  depends on real paint or real navigation is out of their reach.
 
 ## Alternatives considered
 
