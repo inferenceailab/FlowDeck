@@ -24,6 +24,7 @@ builder.Services.AddSingleton<IWorkflowStore>(_ => new InMemoryWorkflowStore(new
 // shared default, which is correct but leaves this host unable to hand the same
 // meter to the scrape endpoint (#189).
 builder.Services.AddSingleton<EngineMetrics>();
+builder.Services.AddSingleton<EngineTracing>();
 
 builder.Services.AddSingleton(provider => new WorkflowEngine(
     provider.GetRequiredService<WorkflowRegistry>(),
@@ -35,7 +36,8 @@ builder.Services.AddSingleton(provider => new WorkflowEngine(
     // logger is silent, not broken (ADR-0025 decision 1) - which is why this is
     // the host's line to write rather than the engine's to require.
     logger: provider.GetService<ILogger<WorkflowEngine>>(),
-    metrics: provider.GetRequiredService<EngineMetrics>()));
+    metrics: provider.GetRequiredService<EngineMetrics>(),
+    tracing: provider.GetRequiredService<EngineTracing>()));
 
 // How this node behaves in a cluster. Validated at startup rather than on first
 // poll, so a lease shorter than its own renewal interval fails the deployment
