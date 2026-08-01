@@ -1,0 +1,9 @@
+# The dashboard image is built with src/frontend as its context, so it needs
+# its own ignore file - the root .dockerignore does not apply.
+node_modules/
+dist/
+.angular/
+coverage/
+
+**/.DS_Store
+**/Thumbs.db

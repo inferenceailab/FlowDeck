@@ -33,21 +33,9 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       prefix: ${{ steps.meta.outputs.prefix }}
-      built: ${{ steps.detect.outputs.found }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Detect Dockerfiles
-        id: detect
-        shell: bash
-        run: |
-          if [ -f src/backend/Dockerfile ] && [ -f src/frontend/Dockerfile ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Dockerfiles not present yet - build skipped until Phase 3 lands."
-          fi
 
       # GHCR rejects uppercase image names and this repository is "FlowDeck",
       # so the prefix must be lowercased. Actions expressions have no lower()
@@ -63,22 +51,24 @@ jobs:
       # restricts Actions to GitHub-owned and verified creators, and the CLI
       # keeps the supply-chain surface to zero third-party actions.
       - name: Log in to GHCR
-        if: steps.detect.outputs.found == 'true'
         shell: bash
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
 
       - name: Build API image
-        if: steps.detect.outputs.found == 'true'
         shell: bash
         env:
           PREFIX: ${{ steps.meta.outputs.prefix }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
+          # Root context, not src/backend. global.json pins the SDK and
+          # Directory.Build.props carries TreatWarningsAsErrors and the
+          # SonarAnalyzer reference; both live at the root, so a build scoped
+          # to src/backend would quietly compile with a different SDK and none
+          # of the analysis this repository relies on - and still succeed.
           docker build -t "$PREFIX/api:$TAG" -t "$PREFIX/api:latest" \
-            -f src/backend/Dockerfile src/backend
+            -f src/backend/Dockerfile .
 
       - name: Build web image
-        if: steps.detect.outputs.found == 'true'
         shell: bash
         env:
           PREFIX: ${{ steps.meta.outputs.prefix }}
@@ -88,7 +78,6 @@ jobs:
             -f src/frontend/Dockerfile src/frontend
 
       - name: Push images
-        if: steps.detect.outputs.found == 'true'
         shell: bash
         env:
           PREFIX: ${{ steps.meta.outputs.prefix }}
@@ -97,7 +86,7 @@ jobs:
           docker push --all-tags "$PREFIX/web"
 
       - name: Log out of GHCR
-        if: always() && steps.detect.outputs.found == 'true'
+        if: always()
         shell: bash
         run: docker logout "$REGISTRY" || true
 
@@ -106,7 +95,6 @@ jobs:
     name: Deploy to homelab
     runs-on: self-hosted
     needs: build
-    if: needs.build.outputs.built == 'true'
     # Requires a GitHub Environment named "homelab". Add required reviewers
     # there to turn every deployment into an explicit approval.
     environment:
