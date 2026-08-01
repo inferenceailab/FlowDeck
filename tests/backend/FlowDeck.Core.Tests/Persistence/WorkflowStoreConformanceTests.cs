@@ -33,11 +33,12 @@ public abstract class WorkflowStoreConformanceTests
         Guid? id = null,
         InstanceStatus status = InstanceStatus.Running,
         string definitionId = "order",
-        DateTimeOffset? createdAt = null) => new()
+        DateTimeOffset? createdAt = null,
+        int definitionVersion = 1) => new()
         {
             Id = id ?? Guid.NewGuid(),
             DefinitionId = definitionId,
-            DefinitionVersion = 1,
+            DefinitionVersion = definitionVersion,
             Status = status,
             CurrentStepIndex = 0,
             CurrentStepName = "A",
@@ -586,6 +587,74 @@ public abstract class WorkflowStoreConformanceTests
 
         Assert.Single(orders);
         Assert.Equal("order", orders[0].DefinitionId);
+    }
+
+    /// <summary>
+    /// The fifth field to reach this suite, and for the same reason as the
+    /// other four: a predicate a provider silently ignores returns a wrong
+    /// answer rather than an error. Here the wrong answer is "nothing is using
+    /// this version", which is what an operator reads before deleting it
+    /// (ADR-0026).
+    /// </summary>
+    [SkippableFact]
+    public async Task Listing_filters_by_definition_version()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(definitionId: "order", definitionVersion: 1));
+        await store.CreateAsync(NewRecord(definitionId: "order", definitionVersion: 2));
+
+        // Another workflow's v1, so a provider ignoring DefinitionId and
+        // matching only the number does not pass.
+        await store.CreateAsync(NewRecord(definitionId: "shipment", definitionVersion: 1));
+
+        var v1 = await store.ListAsync(new InstanceFilter { DefinitionId = "order", DefinitionVersion = 1 });
+
+        Assert.Single(v1);
+        Assert.Equal(1, v1[0].DefinitionVersion);
+        Assert.Equal("order", v1[0].DefinitionId);
+    }
+
+    [SkippableFact]
+    public async Task Listing_active_only_excludes_terminal_instances()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Running));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Suspended));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Completed));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Cancelled));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.Compensated));
+        await store.CreateAsync(NewRecord(status: InstanceStatus.CompensationFailed));
+
+        var active = await store.ListAsync(new InstanceFilter { ActiveOnly = true });
+
+        // The two that can still execute, and none of the four that cannot. A
+        // terminal instance keeps its definition version forever, so counting
+        // those would mean no version could ever be retired.
+        Assert.Equal(2, active.Count);
+        Assert.All(
+            active,
+            record => Assert.True(record.Status is InstanceStatus.Running or InstanceStatus.Suspended));
+    }
+
+    [SkippableFact]
+    public async Task Counting_applies_the_version_and_active_filters()
+    {
+        var store = await this.CreateStoreAsync();
+        await store.CreateAsync(NewRecord(definitionVersion: 1, status: InstanceStatus.Suspended));
+        await store.CreateAsync(NewRecord(definitionVersion: 1, status: InstanceStatus.Completed));
+        await store.CreateAsync(NewRecord(definitionVersion: 2, status: InstanceStatus.Running));
+
+        // Counted rather than listed, because that is what retirement asks and
+        // a provider can implement the two paths differently - #25 already had
+        // total and page disagree once.
+        var holding = await store.CountAsync(new InstanceFilter
+        {
+            DefinitionId = "order",
+            DefinitionVersion = 1,
+            ActiveOnly = true,
+        });
+
+        Assert.Equal(1, holding);
     }
 
     [SkippableFact]

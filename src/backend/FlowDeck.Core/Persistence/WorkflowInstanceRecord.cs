@@ -286,6 +286,35 @@ public sealed record InstanceFilter
     /// <summary>Restrict to one definition id, or null for any.</summary>
     public string? DefinitionId { get; init; }
 
+    /// <summary>
+    /// Restrict to one definition version, or null for any.
+    /// </summary>
+    /// <remarks>
+    /// Only meaningful alongside <see cref="DefinitionId"/> - a version number
+    /// on its own names nothing, since two unrelated workflows both have a v1.
+    /// Not enforced here, because a filter that threw would make the store
+    /// responsible for a caller's mistake; it simply matches nothing useful.
+    /// </remarks>
+    public int? DefinitionVersion { get; init; }
+
+    /// <summary>
+    /// Restrict to instances that can still execute.
+    /// </summary>
+    /// <remarks>
+    /// Non-terminal: <see cref="InstanceStatus.Running"/> or
+    /// <see cref="InstanceStatus.Suspended"/>. A separate flag rather than a
+    /// second status field, because "still going" is two statuses today and
+    /// would silently mean the wrong thing if a third were added.
+    ///
+    /// <para>
+    /// This is what "is anything still using this definition version" asks
+    /// (ADR-0026 decision 4). A terminal instance keeps its definition version
+    /// forever - history is not rewritten - so counting those would mean no
+    /// version could ever be retired.
+    /// </para>
+    /// </remarks>
+    public bool ActiveOnly { get; init; }
+
     public int Skip { get; init; }
 
     /// <summary>Maximum results. Null means no limit.</summary>

@@ -190,7 +190,22 @@ public sealed class InMemoryWorkflowStore(WorkflowDataSerializer? serializer = n
         this.instances.Values
             .Where(record => filter.Status is null || record.Status == filter.Status)
             .Where(record => filter.DefinitionId is null
-                || string.Equals(record.DefinitionId, filter.DefinitionId, StringComparison.Ordinal));
+                || string.Equals(record.DefinitionId, filter.DefinitionId, StringComparison.Ordinal))
+            .Where(record => filter.DefinitionVersion is null
+                || record.DefinitionVersion == filter.DefinitionVersion)
+            .Where(record => !filter.ActiveOnly || IsActive(record.Status));
+
+    /// <summary>
+    /// Whether an instance in this status can still execute.
+    /// </summary>
+    /// <remarks>
+    /// Listed rather than derived by excluding the terminal ones, so a status
+    /// added later is <b>not</b> silently treated as active. The default for
+    /// something nobody has classified should be "does not hold a definition
+    /// version open", because the alternative is a version nobody can retire.
+    /// </remarks>
+    private static bool IsActive(InstanceStatus status) =>
+        status is InstanceStatus.Running or InstanceStatus.Suspended;
 
     /// <summary>
     /// Deep-copies the mutable part of a record.
