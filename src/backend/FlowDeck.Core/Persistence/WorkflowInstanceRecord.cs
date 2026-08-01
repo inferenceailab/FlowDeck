@@ -79,6 +79,35 @@ public sealed record WorkflowInstanceRecord
     /// is working from stale state and is rejected.
     /// </remarks>
     public int Revision { get; init; }
+
+    /// <summary>
+    /// The node currently running this instance, or <see langword="null"/> if
+    /// no node holds it.
+    /// </summary>
+    /// <remarks>
+    /// Held on the instance record rather than in a separate coordination
+    /// store, so a lease can never disagree with the state it guards
+    /// (ADR-0023). A restarted process gets a new identity and does not inherit
+    /// its predecessor's claims — that work was abandoned when the process
+    /// died, and adopting the leases would skip the recovery they exist for.
+    /// </remarks>
+    public string? OwnerNodeId { get; init; }
+
+    /// <summary>
+    /// When this node's claim lapses if it is not renewed.
+    /// </summary>
+    /// <remarks>
+    /// An expired lease is what an orphan <b>is</b>: claiming and orphan
+    /// detection are one mechanism rather than two that have to agree.
+    ///
+    /// <para>
+    /// Compared against each node's own clock, not the database's, because the
+    /// store is provider-agnostic and there is no portable server timestamp.
+    /// Badly skewed clocks therefore misjudge expiry — documented in ADR-0023
+    /// rather than defended.
+    /// </para>
+    /// </remarks>
+    public DateTimeOffset? LeaseExpiresAt { get; init; }
 }
 
 /// <summary>

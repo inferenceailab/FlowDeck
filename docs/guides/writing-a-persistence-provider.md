@@ -153,14 +153,30 @@ FlowDeck ships no migrations, a host running the EF Core provider against a
 database created before #106 needs a column added:
 
 ```sql
-ALTER TABLE flowdeck_instances ADD StepAttempts INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE flowdeck_history   ADD Attempt      INTEGER NOT NULL DEFAULT 1;
+-- #106, #107
+ALTER TABLE flowdeck_instances ADD StepAttempts   INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE flowdeck_history   ADD Attempt        INTEGER NOT NULL DEFAULT 1;
+
+-- #143
+ALTER TABLE flowdeck_instances ADD OwnerNodeId    VARCHAR(200) NULL;
+ALTER TABLE flowdeck_instances ADD LeaseExpiresAt BIGINT       NULL;
+
+CREATE INDEX ix_flowdeck_instances_claimable
+    ON flowdeck_instances (Status, LeaseExpiresAt);
 ```
 
 The defaults differ deliberately. Zero attempts on an instance means an instance
 mid-retry when the upgrade lands gets a fresh allowance rather than a wrong one.
 One on a history row means every execution recorded before #107 reads as a first
 attempt — which is what it was, since retries did not exist.
+
+The lease columns are **nullable with no default**: an instance in flight when
+the upgrade lands is owned by nobody, which is true, and it becomes claimable at
+once rather than looking held by a node that never existed.
+
+`LeaseExpiresAt` is a `BIGINT` because every `DateTimeOffset` is stored as UTC
+ticks — see the conversion note above. The index is what the dispatcher polls on
+(#147); without it every node scans the table on every tick.
 
 ## Checklist
 

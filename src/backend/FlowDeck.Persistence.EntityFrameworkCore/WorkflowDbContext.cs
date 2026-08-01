@@ -51,6 +51,12 @@ public sealed class StoredInstance
     /// <summary>Instance input, serialised per ADR-0014. Null if none.</summary>
     public string? InputJson { get; set; }
 
+    /// <summary>The node currently running this instance (#143).</summary>
+    public string? OwnerNodeId { get; set; }
+
+    /// <summary>When that node's claim lapses if not renewed.</summary>
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+
     /// <summary>Optimistic concurrency token.</summary>
     public int Revision { get; set; }
 }
@@ -154,6 +160,13 @@ public class WorkflowDbContext(DbContextOptions<WorkflowDbContext> options) : Db
 
             // #20 sweeps terminal instances by completion time.
             entity.HasIndex(instance => instance.CompletedAt);
+
+            entity.Property(instance => instance.OwnerNodeId).HasMaxLength(200);
+
+            // #147 polls for claimable work on an interval, on every node.
+            // Without this the dispatcher scans the table each tick, and that
+            // scan grows with history a cluster never stops accumulating.
+            entity.HasIndex(instance => new { instance.Status, instance.LeaseExpiresAt });
         });
 
         modelBuilder.Entity<StoredHistoryEntry>(entity =>
