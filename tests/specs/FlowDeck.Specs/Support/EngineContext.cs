@@ -23,7 +23,18 @@ namespace FlowDeck.Specs.Support;
 /// </remarks>
 public sealed class EngineContext
 {
-    private readonly Dictionary<string, Declaration> declarations = new(StringComparer.Ordinal);
+    /// <summary>
+    /// What a scenario has declared, keyed by <b>id and version</b>.
+    /// </summary>
+    /// <remarks>
+    /// Keyed on both since #204. Keyed on id alone, a scenario declaring two
+    /// versions of one workflow silently registered only the second - and a
+    /// scenario asserting that retiring v1 leaves v2 alone passed because v1
+    /// was never there. Amending a declaration still works: a later Given for
+    /// the same id <i>and</i> version replaces the earlier one, which is what
+    /// "a definition declaring A, B and C" then "step B throws" relies on.
+    /// </remarks>
+    private readonly Dictionary<(string Id, int Version), Declaration> declarations = [];
 
     /// <summary>Persisted state, so restart scenarios have something to restart from.</summary>
     public InMemoryWorkflowStore Store { get; } = new();
@@ -52,14 +63,14 @@ public sealed class EngineContext
 
     /// <summary>Declares a workflow, replacing any declaration with the same id.</summary>
     public void Declare(string id, int version, Action<IWorkflowBuilder> build) =>
-        this.declarations[id] = new Declaration(id, version, build, InputType: null);
+        this.declarations[(id, version)] = new Declaration(id, version, build, InputType: null);
 
     /// <summary>Declares a workflow taking typed input.</summary>
     public void DeclareWithInput<TInput>(string id, int version, Action<IWorkflowBuilder> build) =>
-        this.declarations[id] = new Declaration(id, version, build, typeof(TInput));
+        this.declarations[(id, version)] = new Declaration(id, version, build, typeof(TInput));
 
     /// <summary>Whether anything has been declared under this id.</summary>
-    public bool IsDeclared(string id) => this.declarations.ContainsKey(id);
+    public bool IsDeclared(string id) => this.declarations.Keys.Any(key => key.Id == id);
 
     /// <summary>Builds a registry holding everything declared so far.</summary>
     public WorkflowRegistry BuildRegistry()
