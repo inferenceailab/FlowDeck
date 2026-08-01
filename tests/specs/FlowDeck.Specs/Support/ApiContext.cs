@@ -25,6 +25,7 @@ namespace FlowDeck.Specs.Support;
 public sealed class ApiContext : IDisposable
 {
     private readonly List<IWorkflowDefinition> definitions = [];
+    private readonly Dictionary<string, string> settings = new(StringComparer.Ordinal);
 
     private SpecApiFactory? factory;
     private HttpClient? client;
@@ -53,6 +54,20 @@ public sealed class ApiContext : IDisposable
     /// would depend on when the suite happened to run.
     /// </remarks>
     public void UseClock(TimeProvider replacement) => this.clock = replacement;
+
+    /// <summary>
+    /// Sets a host configuration value before the API starts.
+    /// </summary>
+    /// <remarks>
+    /// The same channel an operator uses - an environment variable read through
+    /// <c>IConfiguration</c> - rather than a test-only switch. Whether tracing is
+    /// wired is decided in <c>Program.cs</c> from configuration, so a scenario
+    /// that bypassed configuration would prove nothing about the deployment.
+    /// </remarks>
+    public void UseSetting(string key, string value) => this.settings[key] = value;
+
+    /// <summary>The service provider of the running host, for flushing exporters.</summary>
+    public IServiceProvider Services => this.Started().Services;
 
     /// <summary>The engine the running API is using, for arranging state.</summary>
     public WorkflowEngine Engine => this.Started().Services.GetRequiredService<WorkflowEngine>();
@@ -90,7 +105,7 @@ public sealed class ApiContext : IDisposable
     {
         if (this.factory is null)
         {
-            this.factory = new SpecApiFactory(this.definitions, this.store, this.clock);
+            this.factory = new SpecApiFactory(this.definitions, this.store, this.clock, this.settings);
             this.client = this.factory.CreateClient();
         }
 
@@ -107,12 +122,18 @@ public sealed class ApiContext : IDisposable
     private sealed class SpecApiFactory(
         IReadOnlyList<IWorkflowDefinition> definitions,
         IWorkflowStore? store,
-        TimeProvider? clock)
+        TimeProvider? clock,
+        IReadOnlyDictionary<string, string> settings)
         : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             ArgumentNullException.ThrowIfNull(builder);
+
+            foreach (var (key, value) in settings)
+            {
+                builder.UseSetting(key, value);
+            }
 
             builder.ConfigureServices(services =>
             {

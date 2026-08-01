@@ -147,10 +147,14 @@ public class OpenApiDocumentTests
             .OfType<Microsoft.AspNetCore.Routing.RouteEndpoint>()
             .Select(endpoint => "/" + endpoint.RoutePattern.RawText!.TrimStart('/'))
 
-            // Health probes and the document itself are infrastructure, not part
-            // of the API a client generates against.
+            // Health probes, the document itself and the metrics scrape are
+            // infrastructure, not part of the API a client generates against.
+            // /metrics is read by a collector that already knows the Prometheus
+            // exposition format; describing it in OpenAPI would advertise a
+            // text/plain blob as though a generated client could use it.
             .Where(path => !path.StartsWith("/health", StringComparison.Ordinal))
             .Where(path => !path.StartsWith("/openapi", StringComparison.Ordinal))
+            .Where(path => !path.Equals("/metrics", StringComparison.Ordinal))
             .Select(Normalise)
             .ToHashSet(StringComparer.Ordinal);
 

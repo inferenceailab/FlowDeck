@@ -97,6 +97,28 @@ public sealed class EngineMetrics : IDisposable
     /// </remarks>
     internal Meter Meter => this.meter;
 
+    /// <summary>
+    /// Whether an instrument belongs to <b>these</b> metrics.
+    /// </summary>
+    /// <remarks>
+    /// A <see cref="MeterListener"/> is process-wide, and every
+    /// <see cref="EngineMetrics"/> in a process publishes a meter of the same
+    /// name - a second engine, or another test's. Matching on the name
+    /// therefore silently aggregates strangers' measurements, which reads as an
+    /// inflated count rather than as a bug.
+    ///
+    /// <para>
+    /// Exposed as a question rather than by publishing the meter, so a caller
+    /// can filter without being handed something to create instruments on.
+    /// </para>
+    /// </remarks>
+    public bool Owns(Instrument instrument)
+    {
+        ArgumentNullException.ThrowIfNull(instrument);
+
+        return ReferenceEquals(instrument.Meter, this.meter);
+    }
+
     /// <summary>Counts an instance that has just been created.</summary>
     public void InstanceStarted(WorkflowInstance instance)
     {
