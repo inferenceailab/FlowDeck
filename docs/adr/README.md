@@ -52,3 +52,5 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0023](0023-multi-node-execution.md) | Multi-node execution | Accepted | M6 |
 | [0024](0024-branching-and-parallel-execution.md) | Branching and parallel execution | Accepted | M7 |
 | [0025](0025-observability.md) | Observability | Accepted | M8 |
+| [0026](0026-definition-version-lifecycle.md) | Definition version lifecycle | Accepted | M9 |
+| [0027](0027-multi-tenancy-and-performance.md) | Multi-tenancy out of scope; performance measured | Accepted | M9 |
