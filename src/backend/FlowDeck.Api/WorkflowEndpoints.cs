@@ -27,6 +27,98 @@ public sealed record StartInstanceResponse(Guid InstanceId, InstanceStatus Statu
 public sealed record WorkflowDefinitionResponse(string Id, int Version, string? InputTypeName);
 
 /// <summary>
+/// One branch leaving a step, as the API describes it.
+/// </summary>
+/// <param name="Name">
+/// What the step returns to select this branch, or for a fork arm a label.
+/// </param>
+/// <param name="IsConditional">
+/// Whether a condition over workflow data selects this branch, rather than the
+/// step naming it.
+/// </param>
+/// <param name="IsParallel">
+/// Whether this is one arm of a fork, in which case every arm runs.
+/// </param>
+/// <param name="Steps">The branch body, in declaration order.</param>
+/// <remarks>
+/// <b>The condition itself is not here, and cannot be.</b> It is a compiled
+/// delegate, so nothing can recover what it tests. A caller learns that a
+/// branch is decided by data rather than by the step, which is enough to draw
+/// the two apart and is the most that is true.
+/// </remarks>
+public sealed record WorkflowBranchResponse(
+    string Name,
+    bool IsConditional,
+    bool IsParallel,
+    IReadOnlyList<WorkflowStepResponse> Steps);
+
+/// <summary>
+/// One declared step, as the API describes it.
+/// </summary>
+/// <param name="MaxAttempts">
+/// How many times the step may execute in total, including the first. One for a
+/// step that does not retry, so a client rendering "N attempts" never has to
+/// special-case zero — the same reason step history reports attempt 1.
+/// </param>
+/// <param name="HasCompensation">
+/// Whether the step declares an action that undoes it. Not <c>compensated</c>:
+/// on an instance that word means rollback already ran, and a definition has
+/// not run at all.
+/// </param>
+/// <param name="Branches">
+/// Branches leaving this step, or empty for a plain sequential step.
+/// </param>
+/// <remarks>
+/// The retry <i>policy</i> is reduced to its attempt count. Delays are jittered
+/// and capped, so the schedule a definition would produce is not knowable until
+/// it runs; the attempt count is the part that is a property of the definition.
+/// </remarks>
+public sealed record WorkflowStepResponse(
+    string Name,
+    int MaxAttempts,
+    bool HasCompensation,
+    IReadOnlyList<WorkflowBranchResponse> Branches)
+{
+    /// <summary>Projects a declared step, and everything below it, for the wire.</summary>
+    public static WorkflowStepResponse From(StepDeclaration step)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+
+        return new WorkflowStepResponse(
+            step.Name,
+            step.RetryPolicy.MaxAttempts,
+
+            // Null means the step declares no undo, which is different from an
+            // undo that does nothing — so this is presence, not truthiness of
+            // some flag the author set.
+            step.Compensation is not null,
+            [.. step.Branches.Select(From)]);
+    }
+
+    private static WorkflowBranchResponse From(BranchDeclaration branch) =>
+        new(
+            branch.Name,
+            branch.Condition is not null,
+            branch.IsParallel,
+            [.. branch.Steps.Select(From)]);
+}
+
+/// <summary>
+/// A definition together with the shape it declares.
+/// </summary>
+/// <remarks>
+/// Separate from <see cref="WorkflowDefinitionResponse"/> rather than the list
+/// growing a <c>steps</c> field. Listing answers "is my workflow deployed", is
+/// hit on every dashboard load, and would otherwise compile every registered
+/// definition to answer it.
+/// </remarks>
+public sealed record WorkflowDefinitionDetailResponse(
+    string Id,
+    int Version,
+    string? InputTypeName,
+    IReadOnlyList<WorkflowStepResponse> Steps);
+
+/// <summary>
 /// HTTP surface for starting and inspecting workflow instances.
 /// </summary>
 public static class WorkflowEndpoints
@@ -46,7 +138,53 @@ public static class WorkflowEndpoints
             .WithName("ListWorkflowDefinitions")
             .WithSummary("Lists the workflow definitions this host has registered.");
 
+        workflows.MapGet("/{definitionId}", GetDefinitionAsync)
+            .WithName("GetWorkflowDefinition")
+            .WithSummary("Describes one definition: the steps it declares and the branches leaving them.");
+
         return endpoints;
+    }
+
+    /// <summary>
+    /// Describes one definition's shape.
+    /// </summary>
+    /// <remarks>
+    /// The list endpoint says a workflow exists; nothing said what it does, so
+    /// there was nothing for a dashboard to render but a name.
+    ///
+    /// <para>
+    /// The version defaults to the latest registered, matching how an instance
+    /// is started — an operator looking at a workflow means the one that would
+    /// run now, and pinning stays available for reading an older shape an
+    /// in-flight instance is still executing.
+    /// </para>
+    ///
+    /// <para>
+    /// An unknown id raises <see cref="DefinitionNotFoundException"/>, which
+    /// the handler maps to <c>404</c>. Checking here as well would put the
+    /// mapping in a second place.
+    /// </para>
+    /// </remarks>
+    private static Task<Ok<WorkflowDefinitionDetailResponse>> GetDefinitionAsync(
+        string definitionId,
+        WorkflowRegistry registry,
+        int? version = null)
+    {
+        var definition = version is { } requested
+            ? registry.Get(definitionId, requested)
+            : registry.GetLatest(definitionId);
+
+        // Compiled per request rather than cached. Build is allowed to compose
+        // steps from injected dependencies, so its result is not guaranteed
+        // stable for a given definition - and the engine already pays this on
+        // every instance start, which is far more frequent than this.
+        var steps = WorkflowGraph.Of(definition);
+
+        return Task.FromResult(TypedResults.Ok(new WorkflowDefinitionDetailResponse(
+            definition.Id,
+            definition.Version,
+            definition.InputType?.Name,
+            [.. steps.Select(WorkflowStepResponse.From)])));
     }
 
     /// <summary>

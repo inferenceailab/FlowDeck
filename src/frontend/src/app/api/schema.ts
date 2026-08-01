@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/{definitionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Describes one definition: the steps it declares and the branches leaving them. */
+        get: operations["GetWorkflowDefinition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instances/{instanceId}": {
         parameters: {
             query?: never;
@@ -166,11 +183,31 @@ export interface components {
         };
         /** @enum {unknown} */
         StepStatus: "Success" | "Failed";
+        WorkflowBranchResponse: {
+            name: string;
+            isConditional: boolean;
+            isParallel: boolean;
+            steps: components["schemas"]["WorkflowStepResponse"][];
+        };
+        WorkflowDefinitionDetailResponse: {
+            id: string;
+            /** Format: int32 */
+            version: number | string;
+            inputTypeName: null | string;
+            steps: components["schemas"]["WorkflowStepResponse"][];
+        };
         WorkflowDefinitionResponse: {
             id: string;
             /** Format: int32 */
             version: number | string;
             inputTypeName: null | string;
+        };
+        WorkflowStepResponse: {
+            name: string;
+            /** Format: int32 */
+            maxAttempts: number | string;
+            hasCompensation: boolean;
+            branches: components["schemas"]["WorkflowBranchResponse"][];
         };
     };
     responses: never;
@@ -221,6 +258,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowDefinitionResponse"][];
+                };
+            };
+        };
+    };
+    GetWorkflowDefinition: {
+        parameters: {
+            query?: {
+                version?: number | string;
+            };
+            header?: never;
+            path: {
+                definitionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDefinitionDetailResponse"];
                 };
             };
         };

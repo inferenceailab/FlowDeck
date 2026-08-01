@@ -77,6 +77,49 @@
         }
       }
     },
+    "/api/workflows/{definitionId}": {
+      "get": {
+        "tags": [
+          "WorkflowEndpoints"
+        ],
+        "summary": "Describes one definition: the steps it declares and the branches leaving them.",
+        "operationId": "GetWorkflowDefinition",
+        "parameters": [
+          {
+            "name": "definitionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDefinitionDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instances/{instanceId}": {
       "get": {
         "tags": [
@@ -479,6 +522,66 @@
           "Failed"
         ]
       },
+      "WorkflowBranchResponse": {
+        "required": [
+          "name",
+          "isConditional",
+          "isParallel",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "isConditional": {
+            "type": "boolean"
+          },
+          "isParallel": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepResponse"
+            }
+          }
+        }
+      },
+      "WorkflowDefinitionDetailResponse": {
+        "required": [
+          "id",
+          "version",
+          "inputTypeName",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "inputTypeName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepResponse"
+            }
+          }
+        }
+      },
       "WorkflowDefinitionResponse": {
         "required": [
           "id",
@@ -503,6 +606,37 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "WorkflowStepResponse": {
+        "required": [
+          "name",
+          "maxAttempts",
+          "hasCompensation",
+          "branches"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "maxAttempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "hasCompensation": {
+            "type": "boolean"
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowBranchResponse"
+            }
           }
         }
       }

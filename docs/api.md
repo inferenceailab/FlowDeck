@@ -22,6 +22,7 @@ they are, and what a client should do about each failure.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/workflows` | List registered definitions |
+| `GET` | `/api/workflows/{definitionId}` | Describe one definition's shape |
 | `POST` | `/api/workflows/{definitionId}/instances` | Start an instance |
 | `GET` | `/api/instances` | List instances, newest first |
 | `GET` | `/api/instances/{instanceId}` | Get one instance |
@@ -30,6 +31,51 @@ they are, and what a client should do about each failure.
 | `GET` | `/health/live` | Liveness probe |
 | `GET` | `/health/ready` | Readiness probe |
 | `GET` | `/openapi/v1.json` | OpenAPI description |
+
+## Describing a definition
+
+```http
+GET /api/workflows/order-fulfilment
+```
+
+```json
+{
+  "id": "order-fulfilment", "version": 1, "inputTypeName": "OrderRequest",
+  "steps": [
+    { "name": "check-stock", "maxAttempts": 1, "hasCompensation": false,
+      "branches": [
+        { "name": "in-stock", "isConditional": false, "isParallel": false,
+          "steps": [ { "name": "charge", "maxAttempts": 3, "hasCompensation": true,
+                       "branches": [] } ] },
+        { "name": "backorder", "isConditional": false, "isParallel": false,
+          "steps": [ { "name": "notify", "maxAttempts": 1, "hasCompensation": false,
+                       "branches": [] } ] }
+      ] }
+  ]
+}
+```
+
+`steps` is in declaration order, and a branch's `steps` nest the same shape.
+Where a branch rejoins is not a field: the join is implicit, so whatever follows
+the branching step in the enclosing list is what runs next
+([ADR-0024](adr/0024-branching-and-parallel-execution.md)).
+
+**`isParallel` separates a fork from a choice.** Every arm of a fork runs; at
+most one arm of a choice is taken.
+
+**`isConditional` says a branch is selected by data, not what the condition
+tests.** A condition is a compiled delegate, so nothing can recover the test
+from it. Reporting a made-up description would put an invented answer in front
+of an operator, which is worse than reporting less.
+
+**`maxAttempts` is the whole of the retry policy that is reported.** Delays are
+jittered and capped, so the schedule only exists once a step actually runs.
+
+**Version defaults to the latest**, as when starting an instance. `?version=2`
+reads the shape an older in-flight instance is still executing.
+
+**Describing recompiles the definition**, because `Build` may compose steps from
+injected dependencies. Cheap, and the same work an instance start already does.
 
 ## Starting an instance
 
@@ -175,7 +221,6 @@ unauthenticated.
 | **Authentication and authorisation** | Anything reachable can start or cancel workflows | #42 |
 | Resume a suspended instance | A suspended workflow cannot be completed over HTTP at all | #68 |
 | Retry or re-run | Cancel is the only operator action | #66 |
-| Read execution history | The engine records it; nothing exposes it | — |
 | Rate limiting | A client can start instances as fast as it can send | — |
 | Registering definitions | Definitions are C# classes registered at startup | #40 |
 
