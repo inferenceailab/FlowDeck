@@ -7,7 +7,15 @@ namespace FlowDeck.Specs.Steps;
 /// <summary>
 /// Binds Features/Engine/InstanceLifecycle.feature.
 /// </summary>
+/// <remarks>
+/// Scoped to @M1. "Then the instance status becomes Cancelled" appears
+/// verbatim in both issue #12 and issue #26, so the engine and API features
+/// share step text - and an unscoped binding for it is ambiguous rather than
+/// convenient. Scoping keeps both feature files faithful to the issue that
+/// asked for them.
+/// </remarks>
 [Binding]
+[Scope(Tag = "M1")]
 public sealed class InstanceLifecycleSteps(EngineContext world)
 {
     private readonly List<Guid> started = [];
