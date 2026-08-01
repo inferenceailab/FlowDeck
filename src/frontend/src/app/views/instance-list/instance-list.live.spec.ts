@@ -26,6 +26,9 @@ describe('InstanceList live updates', () => {
     failedStepName: null,
     errorType: null,
     errorMessage: null,
+ownerNodeId: null,
+leaseExpiresAt: null,
+awaitingRecovery: false,
   });
 
   const pageOf = (status: InstanceStatus): InstancePage => ({

@@ -3,12 +3,18 @@ using FlowDeck.Core;
 using FlowDeck.Core.Cluster;
 using FlowDeck.Core.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // A registry per host. Definitions are registered at startup by whatever hosts
 // FlowDeck; the API only resolves them.
 builder.Services.AddSingleton<WorkflowRegistry>();
+
+// Registered so the engine, the dispatcher and the API all judge time the same
+// way. A test can substitute it; without a registration each would silently
+// fall back to TimeProvider.System and disagree about lease expiry.
+builder.Services.TryAddSingleton(TimeProvider.System);
 
 // Defaults to in-memory so the API runs and is testable with no database. A
 // real host replaces this registration with EfCoreWorkflowStore.

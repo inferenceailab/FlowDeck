@@ -29,6 +29,7 @@ public sealed class ApiContext : IDisposable
     private SpecApiFactory? factory;
     private HttpClient? client;
     private IWorkflowStore? store;
+    private TimeProvider? clock;
 
     /// <summary>The response the last When produced.</summary>
     public HttpResponseMessage? Response { get; set; }
@@ -44,8 +45,27 @@ public sealed class ApiContext : IDisposable
     /// <summary>Replaces the store, for the readiness scenarios.</summary>
     public void UseStore(IWorkflowStore replacement) => this.store = replacement;
 
+    /// <summary>
+    /// Pins the host's clock.
+    /// </summary>
+    /// <remarks>
+    /// Lease expiry is judged against this, so without it "expired" and "live"
+    /// would depend on when the suite happened to run.
+    /// </remarks>
+    public void UseClock(TimeProvider replacement) => this.clock = replacement;
+
     /// <summary>The engine the running API is using, for arranging state.</summary>
     public WorkflowEngine Engine => this.Started().Services.GetRequiredService<WorkflowEngine>();
+
+    /// <summary>
+    /// The store the running API is using.
+    /// </summary>
+    /// <remarks>
+    /// Seeding through this rather than a store of the scenario's own: a
+    /// fixture the API cannot read would be asserting against a different
+    /// world.
+    /// </remarks>
+    public IWorkflowStore RunningStore => this.Started().Services.GetRequiredService<IWorkflowStore>();
 
     public HttpClient Client
     {
@@ -70,7 +90,7 @@ public sealed class ApiContext : IDisposable
     {
         if (this.factory is null)
         {
-            this.factory = new SpecApiFactory(this.definitions, this.store);
+            this.factory = new SpecApiFactory(this.definitions, this.store, this.clock);
             this.client = this.factory.CreateClient();
         }
 
@@ -84,7 +104,10 @@ public sealed class ApiContext : IDisposable
         this.factory?.Dispose();
     }
 
-    private sealed class SpecApiFactory(IReadOnlyList<IWorkflowDefinition> definitions, IWorkflowStore? store)
+    private sealed class SpecApiFactory(
+        IReadOnlyList<IWorkflowDefinition> definitions,
+        IWorkflowStore? store,
+        TimeProvider? clock)
         : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -111,6 +134,11 @@ public sealed class ApiContext : IDisposable
                 if (store is not null)
                 {
                     services.AddSingleton(store);
+                }
+
+                if (clock is not null)
+                {
+                    services.AddSingleton(clock);
                 }
             });
         }

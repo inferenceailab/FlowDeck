@@ -1,4 +1,4 @@
-@M4 @M5
+@M4 @M5 @M6
 Feature: Instance detail
   The view an operator opens after an alert. Its job is answering where and why
   a run failed, and what the engine did about it.
@@ -31,3 +31,21 @@ Feature: Instance detail
     Given a CompensationFailed instance
     When I open its detail view
     Then it states which compensating actions failed
+
+  @issue-148
+  Scenario: The detail view shows the owning node
+    Given an instance owned by "node-a"
+    When I open its detail view
+    Then it shows that node-a is running it
+
+  @issue-148
+  Scenario: An unowned instance shows no node
+    Given a completed instance with no owner
+    When I open its detail view
+    Then no owning node is shown
+
+  @issue-148
+  Scenario: An expired lease is called out
+    Given a Running instance the API reports as awaiting recovery
+    When I open its detail view
+    Then it states the instance is awaiting recovery

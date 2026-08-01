@@ -136,6 +136,10 @@ export interface components {
             failedStepName: null | string;
             errorType: null | string;
             errorMessage: null | string;
+            ownerNodeId: null | string;
+            /** Format: date-time */
+            leaseExpiresAt: null | string;
+            awaitingRecovery?: boolean;
         };
         /** @enum {unknown} */
         InstanceStatus: "Running" | "Suspended" | "Completed" | "Failed" | "Cancelled" | "Compensated" | "CompensationFailed";

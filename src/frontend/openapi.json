@@ -295,7 +295,9 @@
           "completedAt",
           "failedStepName",
           "errorType",
-          "errorMessage"
+          "errorMessage",
+          "ownerNodeId",
+          "leaseExpiresAt"
         ],
         "type": "object",
         "properties": {
@@ -359,6 +361,22 @@
               "null",
               "string"
             ]
+          },
+          "ownerNodeId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "leaseExpiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "awaitingRecovery": {
+            "type": "boolean"
           }
         }
       },

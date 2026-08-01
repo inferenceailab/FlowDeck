@@ -152,6 +152,98 @@ describeFeature(feature, ({ Scenario }) => {
     });
   });
 
+  Scenario('The detail view shows the owning node', ({ Given, When, Then }) => {
+    let instance: Instance;
+    let view: Rendered;
+
+    Given('an instance owned by "node-a"', () => {
+      instance = anInstance({
+        id: ID,
+        status: statusOf('Running'),
+        currentStepName: 'charge',
+        ownerNodeId: 'node-a',
+        leaseExpiresAt: '2026-08-01T12:00:30+00:00',
+      });
+    });
+
+    When('I open its detail view', async () => {
+      view = await renderView(InstanceDetail, {
+        inputs: { instanceId: ID },
+        responder: detailResponder(instance, []),
+      });
+    });
+
+    Then('it shows that node-a is running it', () => {
+      const owner = view.element.querySelector('.instance-owner');
+
+      expect(owner).not.toBeNull();
+      expect(owner?.textContent).toContain('node-a');
+    });
+  });
+
+  Scenario('An unowned instance shows no node', ({ Given, When, Then }) => {
+    let instance: Instance;
+    let view: Rendered;
+
+    Given('a completed instance with no owner', () => {
+      instance = anInstance({ id: ID, status: statusOf('Completed') });
+    });
+
+    When('I open its detail view', async () => {
+      view = await renderView(InstanceDetail, {
+        inputs: { instanceId: ID },
+        responder: detailResponder(instance, []),
+      });
+    });
+
+    Then('no owning node is shown', () => {
+      // Absent, not blank. A field reading "Running on —" invites the question
+      // of which node that is.
+      expect(view.element.querySelector('.instance-owner')).toBeNull();
+    });
+  });
+
+  Scenario('An expired lease is called out', ({ Given, When, Then }) => {
+    let instance: Instance;
+    let view: Rendered;
+
+    Given('a Running instance the API reports as awaiting recovery', () => {
+      // The flag comes from the server, which judges expiry against the same
+      // clock the nodes use. A browser comparing the timestamp itself would
+      // disagree with the cluster whenever the two clocks differ.
+      instance = anInstance({
+        id: ID,
+        status: statusOf('Running'),
+        currentStepName: 'charge',
+        ownerNodeId: 'dead-node',
+        leaseExpiresAt: '2026-08-01T11:59:00+00:00',
+        awaitingRecovery: true,
+      });
+    });
+
+    When('I open its detail view', async () => {
+      view = await renderView(InstanceDetail, {
+        inputs: { instanceId: ID },
+        responder: detailResponder(instance, []),
+      });
+    });
+
+    Then('it states the instance is awaiting recovery', () => {
+      const notice = view.element.querySelector('.recovery-notice');
+
+      expect(notice).not.toBeNull();
+
+      // role="status", not "alert": nothing is broken and nobody needs to act.
+      // A node will pick it up. Interrupting for that would train an operator
+      // to ignore alerts that matter.
+      expect(notice?.getAttribute('role')).toBe('status');
+      expect(notice?.textContent).toContain('awaiting recovery');
+
+      // Names the node that dropped it, which is the actionable part.
+      expect(notice?.textContent).toContain('dead-node');
+    });
+  });
+
   Scenario('A partial rollback is called out', ({ Given, When, Then }) => {
     let instance: Instance;
     let history: StepHistoryEntry[];

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FlowDeck.Core;
 using FlowDeck.Core.Persistence;
 using FlowDeck.Persistence.EntityFrameworkCore;
@@ -13,7 +14,7 @@ namespace FlowDeck.Specs.Steps;
 /// </summary>
 [Binding]
 [Scope(Feature = "Instance ownership")]
-public sealed class OwnershipSteps(EngineContext world) : IDisposable
+public sealed class OwnershipSteps(EngineContext world, ApiContext api) : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
 
@@ -103,6 +104,100 @@ public sealed class OwnershipSteps(EngineContext world) : IDisposable
 
         Assert.Null(reloaded!.OwnerNodeId);
         Assert.Null(reloaded.LeaseExpiresAt);
+    }
+
+    // -------------------------------------------------- over HTTP (#148)
+
+    [Given("an instance owned by {string} over HTTP")]
+    public async Task GivenAnInstanceOwnedOverHttp(string node) =>
+        await this.SeedOverHttpAsync(InstanceStatus.Suspended, node, T0.AddMinutes(5));
+
+    [Given("a completed instance with no owner over HTTP")]
+    public async Task GivenACompletedInstanceOverHttp() =>
+        await this.SeedOverHttpAsync(InstanceStatus.Completed, owner: null, leaseExpiry: null);
+
+    [Given("a Running instance whose lease has expired over HTTP")]
+    public async Task GivenAnExpiredLeaseOverHttp() =>
+        await this.SeedOverHttpAsync(InstanceStatus.Running, "dead-node", T0.AddSeconds(-1));
+
+    [Given("a Suspended instance whose lease has expired over HTTP")]
+    public async Task GivenASuspendedExpiredLeaseOverHttp() =>
+        await this.SeedOverHttpAsync(InstanceStatus.Suspended, "dead-node", T0.AddSeconds(-1));
+
+    [When("I read that instance over HTTP")]
+    public async Task WhenIReadThatInstanceOverHttp() =>
+        await api.SendAsync(client => client.GetAsync($"/api/instances/{this.instanceId}"));
+
+    [Then("the body reports the owning node and lease expiry")]
+    public void ThenTheBodyReportsTheOwner()
+    {
+        var body = JsonDocument.Parse(api.Body).RootElement;
+
+        Assert.Equal("node-a", body.GetProperty("ownerNodeId").GetString());
+        Assert.Equal(T0.AddMinutes(5), body.GetProperty("leaseExpiresAt").GetDateTimeOffset());
+    }
+
+    [Then("the body reports no owning node")]
+    public void ThenTheBodyReportsNoOwner()
+    {
+        var body = JsonDocument.Parse(api.Body).RootElement;
+
+        // Present and null, not absent. A client rendering "running on {node}"
+        // needs to distinguish "nobody" from "the API did not tell me".
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("ownerNodeId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("leaseExpiresAt").ValueKind);
+    }
+
+    [Then("the body says it is awaiting recovery")]
+    public void ThenTheBodySaysAwaitingRecovery() =>
+        Assert.True(JsonDocument.Parse(api.Body).RootElement
+            .GetProperty("awaitingRecovery").GetBoolean());
+
+    [Then("the body does not say it is awaiting recovery")]
+    public void ThenTheBodyDoesNotSayAwaitingRecovery() =>
+        Assert.False(JsonDocument.Parse(api.Body).RootElement
+            .GetProperty("awaitingRecovery").GetBoolean());
+
+    /// <summary>
+    /// Seeds an instance into the store the running API is using.
+    /// </summary>
+    /// <remarks>
+    /// Through the API's own store rather than a separate one: the scenario is
+    /// about what a client sees, and a fixture the API cannot read would be
+    /// asserting against a different world.
+    /// </remarks>
+    private async Task SeedOverHttpAsync(InstanceStatus status, string? owner, DateTimeOffset? leaseExpiry)
+    {
+        // Pins the host's clock to T0, so "expired" and "live" mean what the
+        // scenario says rather than depending on when the suite happens to run.
+        // Without this the API judged a lease dated 12:00 against the real time
+        // of day and reported a lapsed lease as healthy.
+        api.UseClock(new Microsoft.Extensions.Time.Testing.FakeTimeProvider(T0));
+
+        api.Declare(new SpecWorkflow("owned", 1, builder =>
+            builder.AddStep("wait", () => new Parks())));
+
+        this.instanceId = Guid.NewGuid();
+
+        await api.RunningStore.CreateAsync(new WorkflowInstanceRecord
+        {
+            Id = this.instanceId,
+            DefinitionId = "owned",
+            DefinitionVersion = 1,
+            Status = status,
+            CurrentStepIndex = 0,
+            CurrentStepName = "wait",
+            CreatedAt = T0,
+            CompletedAt = status == InstanceStatus.Completed ? T0 : null,
+            OwnerNodeId = owner,
+            LeaseExpiresAt = leaseExpiry,
+        });
+    }
+
+    private sealed class Parks : IStep
+    {
+        public ValueTask<Outcome> ExecuteAsync(IStepContext context, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Outcome.Suspend);
     }
 
     private async Task<Guid> CreateAsync()
