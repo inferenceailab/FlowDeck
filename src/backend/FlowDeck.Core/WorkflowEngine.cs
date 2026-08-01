@@ -324,6 +324,70 @@ public sealed class WorkflowEngine
         return instance;
     }
 
+    /// <summary>
+    /// Removes a definition version, refusing while instances still run it.
+    /// </summary>
+    /// <returns>How many instances have ever run the retired version.</returns>
+    /// <exception cref="DefinitionNotFoundException">No such version.</exception>
+    /// <exception cref="DefinitionInUseException">
+    /// Non-terminal instances are still executing it.
+    /// </exception>
+    /// <remarks>
+    /// On the engine rather than on <see cref="WorkflowRegistry"/>, because
+    /// deciding whether a version is in use needs the store and a lookup should
+    /// not have to carry a database (ADR-0026 decision 3).
+    ///
+    /// <para>
+    /// The hazard this closes is live and silent otherwise: a host that simply
+    /// stops registering a version leaves every in-flight instance of it
+    /// unresumable, because <see cref="ResumeAsync"/> and the dispatcher both
+    /// resolve through the registry. Nothing reports that, and an operator finds
+    /// out days later when a recovery fails.
+    /// </para>
+    ///
+    /// <para>
+    /// Terminal instances do not block it and are not touched. Their history
+    /// stays readable - an instance that ran is a record of what happened, and
+    /// retiring a definition is not a reason to lose it.
+    /// </para>
+    /// </remarks>
+    public async Task<int> RetireAsync(
+        string definitionId,
+        int version,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(definitionId);
+
+        // Resolved first, so retiring something that was never registered says
+        // so rather than succeeding silently. A no-op here would let a typo
+        // read as a completed cleanup.
+        _ = this.registry.Get(definitionId, version);
+
+        var filter = new InstanceFilter { DefinitionId = definitionId, DefinitionVersion = version };
+
+        var active = await this.store
+            .CountAsync(filter with { ActiveOnly = true }, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (active > 0)
+        {
+            throw new DefinitionInUseException(definitionId, version, active);
+        }
+
+        var everRan = await this.store.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+
+        // Checked between the count and the removal only in the sense that a
+        // concurrent start could still slip in. That race is bounded: the
+        // instance would fail to start moments later with
+        // DefinitionNotFoundException, which is loud, rather than becoming an
+        // unresumable instance, which is silent.
+        this.registry.Unregister(definitionId, version);
+
+        this.logger.DefinitionRetired(definitionId, version, everRan);
+
+        return everRan;
+    }
+
     private static void ValidateInput(IWorkflowDefinition definition, object? input)
     {
         var expected = definition.InputType;

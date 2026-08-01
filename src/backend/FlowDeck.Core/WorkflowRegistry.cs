@@ -50,6 +50,31 @@ public sealed class WorkflowRegistry
     }
 
     /// <summary>
+    /// Removes a definition version from the registry.
+    /// </summary>
+    /// <returns>Whether it was registered.</returns>
+    /// <remarks>
+    /// <b>Internal on purpose.</b> Removing a version that instances are still
+    /// running strands them - <c>ResumeAsync</c> and the dispatcher both resolve
+    /// through this registry, so an unresumable instance is the result and
+    /// nothing reports it.
+    ///
+    /// <para>
+    /// Deciding whether a version is in use needs the store, which a lookup has
+    /// no business holding, so the check lives on
+    /// <see cref="WorkflowEngine.RetireAsync"/> and this stays unreachable from
+    /// outside the assembly (ADR-0026 decision 3). A public <c>Unregister</c>
+    /// would make that rule a convention.
+    /// </para>
+    /// </remarks>
+    internal bool Unregister(string id, int version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        return this.definitions.TryRemove(new DefinitionKey(id, version), out _);
+    }
+
+    /// <summary>
     /// Resolves a definition by its exact id and version.
     /// </summary>
     /// <exception cref="DefinitionNotFoundException">No such definition.</exception>
