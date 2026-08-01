@@ -50,6 +50,7 @@ public class OpenApiDocumentTests
         {
             ("/api/workflows/{definitionId}/instances", "post"),
             ("/api/workflows", "get"),
+            ("/api/workflows/{definitionId}", "get"),
             ("/api/instances/{instanceId}", "get"),
             ("/api/instances", "get"),
             ("/api/instances/{instanceId}/cancel", "post"),
@@ -80,7 +81,7 @@ public class OpenApiDocumentTests
 
         foreach (var operationId in new[]
         {
-            "StartWorkflowInstance", "ListWorkflowDefinitions",
+            "StartWorkflowInstance", "ListWorkflowDefinitions", "GetWorkflowDefinition",
             "GetWorkflowInstance", "ListWorkflowInstances", "CancelWorkflowInstance",
         })
         {

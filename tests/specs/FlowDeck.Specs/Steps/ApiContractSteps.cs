@@ -72,6 +72,7 @@ public sealed class ApiContractSteps(ApiContext api)
         string[] expected =
         [
             "/api/workflows",
+            "/api/workflows/{definitionId}",
             "/api/workflows/{definitionId}/instances",
             "/api/instances",
             "/api/instances/{instanceId}",
