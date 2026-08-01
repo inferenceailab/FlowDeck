@@ -127,4 +127,103 @@ internal static partial class EngineLog
         this ILogger logger,
         string definitionId,
         InstanceStatus status);
+
+    /// <summary>
+    /// A step is about to run.
+    /// </summary>
+    /// <remarks>
+    /// <b>Debug</b>, unlike the lifecycle events. A workflow of twenty steps
+    /// would otherwise emit forty Information entries per instance and bury the
+    /// six that describe the run as a whole.
+    ///
+    /// <para>
+    /// The default therefore is: quiet while a workflow is healthy, and loud
+    /// the moment it retries, rolls back or fails - each of which has its own
+    /// event above Debug. An operator who wants the play-by-play turns
+    /// FlowDeck.Core down to Debug and gets it.
+    /// </para>
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 1100,
+        EventName = "StepStarted",
+        Level = LogLevel.Debug,
+        Message = "Step {StepName} started, attempt {Attempt}.")]
+    public static partial void StepStarted(
+        this ILogger logger,
+        string stepName,
+        int attempt);
+
+    [LoggerMessage(
+        EventId = 1101,
+        EventName = "StepFinished",
+        Level = LogLevel.Debug,
+        Message = "Step {StepName} finished as {Status} in {ElapsedMs}ms, attempt {Attempt}.")]
+    public static partial void StepFinished(
+        this ILogger logger,
+        string stepName,
+        StepStatus status,
+        double elapsedMs,
+        int attempt);
+
+    /// <summary>
+    /// A step failed and will be attempted again.
+    /// </summary>
+    /// <remarks>
+    /// <b>Warning</b>, and it carries the delay. A workflow backing off for
+    /// thirty seconds and a workflow that has hung look identical from outside,
+    /// and this entry is the difference between the two.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 1102,
+        EventName = "StepRetrying",
+        Level = LogLevel.Warning,
+        Message = "Step {StepName} failed on attempt {Attempt} ({ErrorType}); retrying in {DelayMs}ms.")]
+    public static partial void StepRetrying(
+        this ILogger logger,
+        string stepName,
+        int attempt,
+        string? errorType,
+        double delayMs);
+
+    /// <summary>
+    /// A compensating action undid a step.
+    /// </summary>
+    /// <remarks>
+    /// Its own event rather than a <see cref="StepFinished"/> with a
+    /// <c>compensate:</c> name. A rollback is not progress, and an operator
+    /// filtering on the forward events should not have to know the engine's
+    /// history naming convention (ADR-0021) to exclude it.
+    ///
+    /// <para>
+    /// The name here is the step being undone, without that prefix. The prefix
+    /// is how history keeps two entries apart in one table; it is not something
+    /// to make a reader parse.
+    /// </para>
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 1103,
+        EventName = "StepRolledBack",
+        Level = LogLevel.Information,
+        Message = "Rolled back step {StepName}.")]
+    public static partial void StepRolledBack(this ILogger logger, string stepName);
+
+    /// <summary>
+    /// A compensating action failed, so its step's effects are still in place.
+    /// </summary>
+    /// <remarks>
+    /// <b>Error</b>, and one per failed action rather than one summary at the
+    /// end. Rollback continues past a failure (ADR-0021), so an instance can
+    /// leave several steps un-undone, and which ones is the whole content of
+    /// the operator's next hour.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 1104,
+        EventName = "RollbackFailed",
+        Level = LogLevel.Error,
+        Message = "Could not roll back step {StepName}: {ErrorType}: {ErrorMessage}")]
+    public static partial void RollbackFailed(
+        this ILogger logger,
+        string stepName,
+        string? errorType,
+        string? errorMessage);
 }
