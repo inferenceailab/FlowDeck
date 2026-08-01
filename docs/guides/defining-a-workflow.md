@@ -484,6 +484,143 @@ An operator cancelling a workflow may be stopping it to fix forward, and an
 automatic rollback would destroy work they meant to keep. Whether that should be
 an explicit choice is #124, not settled by the engine's default.
 
+## Branching and parallel execution
+
+A workflow is not only a straight line. A step can send execution down one of
+several **branches**, or fan out into branches that all run at the same time.
+
+### A named branch
+
+The step decides, and the branch is selected by name:
+
+```csharp
+builder
+    .AddStep("check-stock", () => new CheckStock())
+        .Branch("in-stock",  b => b.AddStep("charge", () => new Charge()))
+        .Branch("backorder", b => b.AddStep("notify", () => new NotifyCustomer()));
+```
+
+### A predicate branch
+
+The condition is a plain function of workflow data, so the shape of the workflow
+is readable without running it:
+
+```csharp
+builder
+    .AddStep("total", () => new CalculateTotal())
+        .BranchWhen("large", data => data.Get<int>("total") > 1000,
+            b => b.AddStep("manual-approval", () => new Approve()))
+        .BranchWhen("small", data => data.Get<int>("total") <= 1000,
+            b => b.AddStep("auto-approve", () => new AutoApprove()));
+```
+
+Conditions are tested in declaration order and the first match wins, so you read
+them the way you read an `if` / `else if` chain.
+
+Both attach **backwards**, to the step just declared — the same rule as
+`WithCompensation`. A branch belongs to the decision that selects it.
+
+### A parallel fork
+
+```csharp
+builder
+    .AddStep("prepare", () => new Prepare())
+        .Fork(
+            a => a.AddStep("reserve-stock", () => new ReserveStock()),
+            b => b.AddStep("authorise-payment", () => new AuthorisePayment()),
+            c => c.AddStep("notify-warehouse", () => new NotifyWarehouse()));
+```
+
+**Parallel branches run genuinely concurrently** — on separate tasks, at the same
+time. Three slow HTTP calls take as long as the slowest, not their sum. That is
+the reason to reach for a fork, and it is also the reason the rest of this
+section exists.
+
+The join is implicit. When the branches finish, execution continues with whatever
+was declared after the branching step; there is no join to declare and no way to
+declare one that does not converge.
+
+### Workflow data is shared, and only individually thread-safe
+
+Every branch of a fork reads and writes **the same** `IWorkflowData`. Each
+individual `Get`, `Set`, `TryGet` and `Contains` is safe to call from several
+branches at once; the bag is locked internally.
+
+That is all it gives you. A `Get` followed by a `Set` is **two** operations, and
+two branches doing that to the same key is a lost update — exactly as it would be
+in any other shared state:
+
+```csharp
+// Not safe. Two branches can both read 3 and both write 4.
+var count = context.Data.Get<int>("processed");
+context.Data.Set("processed", count + 1);
+```
+
+Give each branch its own key and combine after the join, which is safe because
+the join has already waited for both:
+
+```csharp
+// In branch A                          // In branch B
+context.Data.Set("processed-a", 3);     context.Data.Set("processed-b", 4);
+
+// After the join
+var total = context.Data.Get<int>("processed-a") + context.Data.Get<int>("processed-b");
+```
+
+### A join waits for every branch, and any failure fails the instance
+
+Every branch runs to completion. If one fails, the instance fails **once the
+others have finished**, and compensation unwinds what completed — including work
+done on sibling branches that succeeded.
+
+A failing branch does not abandon its siblings mid-step. Abandoning one would not
+stop its side effects; it would only stop FlowDeck recording them.
+
+There is deliberately no way to express best-effort work that may fail without
+stopping the workflow. If you need that, catch the failure inside your own step
+and return `Outcome.Next`.
+
+### A choice with no matching condition takes no branch
+
+Execution simply continues past the branching step. This is not an error: a
+conditional with no matching case is an ordinary shape, and failing would make
+every branch set implicitly require a catch-all.
+
+If a branch is genuinely mandatory, assert it in the step that decides.
+
+### Compensation is ordered by completion, not by declaration
+
+Reverse execution order stops being well defined once two branches ran at the
+same time. Rollback therefore walks what actually happened, **most recently
+completed first**.
+
+Two consequences worth knowing:
+
+- Sibling branches' compensating actions are independent, so they may run in
+  either relative order.
+- A step on a branch the instance never took is never compensated. Undoing work
+  that never happened would act on the world based on nothing.
+
+### Suspending inside a branch is not supported
+
+`Outcome.Suspend` from a step inside a branch **fails the instance**, with a
+message saying so. It does not suspend.
+
+The unsettled question is not *where* a suspended fork would resume from — the
+position has been set-valued since #166 — but what "suspended" should mean while
+sibling branches are still running. Failure has an answer: the siblings run on
+and the join fails. Suspension has none, so the engine refuses rather than
+parking an instance in a state no rule covers. Tracked by #179 — suspend from the
+top-level sequence in the meantime.
+
+### What a crash does to a fork
+
+Recovery resumes each branch where it stopped, and skips branches that had
+already finished. The step that opened the fork is not re-run.
+
+A recovered choice stays on the branch it had taken rather than re-evaluating its
+condition, because the data the condition read may have changed since.
+
 ## Running on more than one node
 
 Every FlowDeck node runs the same code and polls the same database for work
@@ -652,7 +789,11 @@ These fail fast rather than misbehaving quietly:
 | Rule | Exception |
 | --- | --- |
 | A definition must declare at least one step | `InvalidWorkflowDefinitionException` |
-| Step names must be unique within a definition | `InvalidWorkflowDefinitionException` |
+| Step names must be unique across the whole graph, branches included | `InvalidWorkflowDefinitionException` |
+| A branch must be declared after a step, and must declare at least one step | `InvalidWorkflowDefinitionException` |
+| A step must not declare two branches with the same name | `InvalidWorkflowDefinitionException` |
+| A step branches one way or the other: a choice must not be mixed with a fork | `InvalidWorkflowDefinitionException` |
+| A fork must declare at least two branches | `InvalidWorkflowDefinitionException` |
 | A definition id must not be blank | `ArgumentException` |
 | A version must be positive | `ArgumentException` |
 | `(id, version)` must be registered before starting | `DefinitionNotFoundException` |
@@ -665,6 +806,8 @@ caught separately from faults thrown by your step code.
 | Limitation | Tracked by |
 | --- | --- |
 | A retry backoff blocks the calling task | #39 |
+| Suspending inside a branch fails the instance rather than suspending it | #179 |
+| Best-effort branches: any branch failure fails the instance | — |
 | A lapsed lease can cause a duplicate step execution | [above](#a-lapsed-lease-can-cause-a-duplicate-step-execution) |
 | Recovery is not load balancing: a started instance stays on its node | — |
 | Cancelling an instance does not roll it back | #124 |
