@@ -116,18 +116,29 @@ public class FeatureFileTests
         //
         // Counting the compiled scenarios against the source is the only place
         // that discrepancy is visible from inside the run.
-        var compiled = typeof(FeatureFileTests).Assembly
+        // Outlines are counted separately: Reqnroll generates a theory for an
+        // outline and a fact for a plain scenario, so comparing only facts
+        // would leave every Scenario Outline outside the guard - unwatched by
+        // the test written to make sure nothing goes unwatched.
+        var methods = typeof(FeatureFileTests).Assembly
             .GetTypes()
             .Where(type => type.Name.EndsWith("Feature", StringComparison.Ordinal))
             .SelectMany(type => type.GetMethods())
-            .Count(method => method.GetCustomAttributes(inherit: false)
-                .Any(attribute => attribute.GetType().Name is "FactAttribute" or "SkippableFactAttribute"));
+            .Select(method => method.GetCustomAttributes(inherit: false)
+                .Select(attribute => attribute.GetType().Name)
+                .ToArray())
+            .ToArray();
 
-        var declared = FeatureFiles()
-            .SelectMany(File.ReadAllLines)
-            .Count(line => line.TrimStart().StartsWith("Scenario:", StringComparison.Ordinal));
+        var facts = methods.Count(names => names.Any(name => name is "FactAttribute" or "SkippableFactAttribute"));
+        var theories = methods.Count(names => names.Any(name => name is "TheoryAttribute" or "SkippableTheoryAttribute"));
 
-        Assert.Equal(declared, compiled);
+        var lines = FeatureFiles().SelectMany(File.ReadAllLines).Select(line => line.TrimStart()).ToArray();
+
+        var scenarios = lines.Count(line => line.StartsWith("Scenario:", StringComparison.Ordinal));
+        var outlines = lines.Count(line => line.StartsWith("Scenario Outline:", StringComparison.Ordinal));
+
+        Assert.Equal(scenarios, facts);
+        Assert.Equal(outlines, theories);
     }
 
     [Fact]
