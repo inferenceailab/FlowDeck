@@ -141,6 +141,27 @@ public sealed class InMemoryWorkflowStore(WorkflowDataSerializer? serializer = n
         }
     }
 
+    public Task<IReadOnlyList<DefinitionUsage>> CountActiveByDefinitionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (this.gate)
+        {
+            IReadOnlyList<DefinitionUsage> usage =
+            [
+                .. this.instances.Values
+                    .Where(record => IsActive(record.Status))
+                    .GroupBy(record => (record.DefinitionId, record.DefinitionVersion))
+                    .Select(group => new DefinitionUsage(group.Key.DefinitionId, group.Key.DefinitionVersion, group.Count()))
+                    .OrderBy(entry => entry.DefinitionId, StringComparer.Ordinal)
+                    .ThenBy(entry => entry.DefinitionVersion),
+            ];
+
+            return Task.FromResult(usage);
+        }
+    }
+
     public Task<int> CountAsync(InstanceFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);

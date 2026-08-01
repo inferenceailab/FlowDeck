@@ -201,6 +201,8 @@ export interface components {
             /** Format: int32 */
             version: number | string;
             inputTypeName: null | string;
+            /** Format: int32 */
+            activeInstances: number | string;
         };
         WorkflowStepResponse: {
             name: string;

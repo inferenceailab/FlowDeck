@@ -94,10 +94,10 @@ describe('feature files', () => {
 
     // Eleven from M4 (#31-#36), two from #122 whose other two scenarios are
     // observable over HTTP and live in the backend specs, three from #148,
-    // five from #172 and six from #181.
+    // five from #172, six from #181 and four from #205.
     //
     // A hard number rather than a lower bound: it is the one thing that makes
     // deleting a scenario fail rather than quietly shrinking the suite.
-    expect(titles.length).toBe(27);
+    expect(titles.length).toBe(31);
   });
 });

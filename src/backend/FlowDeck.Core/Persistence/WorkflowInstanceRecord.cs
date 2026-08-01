@@ -344,3 +344,14 @@ public sealed class DuplicateInstanceException(Guid instanceId)
 {
     public Guid InstanceId { get; } = instanceId;
 }
+
+/// <summary>
+/// How many instances are still running one definition version.
+/// </summary>
+/// <param name="DefinitionId">The definition.</param>
+/// <param name="DefinitionVersion">The version those instances pinned at start.</param>
+/// <param name="ActiveInstances">
+/// Non-terminal instances holding it. Never zero: a version nothing is running
+/// is absent from the result rather than reported as an empty row.
+/// </param>
+public sealed record DefinitionUsage(string DefinitionId, int DefinitionVersion, int ActiveInstances);
