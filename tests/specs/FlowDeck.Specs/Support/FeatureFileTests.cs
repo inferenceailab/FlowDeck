@@ -110,12 +110,22 @@ public class FeatureFileTests
     [Fact]
     public void Every_scenario_is_compiled_exactly_once()
     {
-        // A stale build once produced two generated classes per feature, so
-        // every scenario ran twice: 42 tests for 23 scenarios, reported as a
-        // clean pass. Nothing about the output said anything was wrong.
+        // Reqnroll's incremental generation is not reliable, and both failure
+        // directions are silent:
         //
-        // Counting the compiled scenarios against the source is the only place
-        // that discrepancy is visible from inside the run.
+        // - a stale build once produced two generated classes per feature, so
+        //   every scenario ran twice - 42 tests for 23 scenarios, reported as a
+        //   clean pass;
+        // - later, one feature's code-behind existed on disk but was left out
+        //   of the compilation, so four API scenarios simply did not run and
+        //   the suite reported 118 green.
+        //
+        // Counting compiled scenarios against the source is the only place
+        // either discrepancy is visible from inside the run.
+        //
+        // If this fails locally, delete every generated *.feature.cs under
+        // Features and rebuild. CI checks out clean, so it always generates
+        // from scratch and is not exposed to this.
         // Outlines are counted separately: Reqnroll generates a theory for an
         // outline and a fact for a plain scenario, so comparing only facts
         // would leave every Scenario Outline outside the guard - unwatched by
