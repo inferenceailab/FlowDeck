@@ -215,4 +215,25 @@ public sealed class InMemoryWorkflowStore(WorkflowDataSerializer? serializer = n
 
         return record with { Data = new Dictionary<string, object?>(record.Data, StringComparer.Ordinal) };
     }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+        DateTimeOffset asOf,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (this.gate)
+        {
+            IReadOnlyList<WorkflowInstanceRecord> claimable = [.. this.instances.Values
+                .Where(record => record.Status is InstanceStatus.Running or InstanceStatus.Suspended)
+                .Where(record => record.OwnerNodeId is null || record.LeaseExpiresAt <= asOf)
+                .OrderBy(record => record.CreatedAt)
+                .Take(limit)
+                .Select(Copy)];
+
+            return Task.FromResult(claimable);
+        }
+    }
 }

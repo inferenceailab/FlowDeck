@@ -11,7 +11,7 @@ namespace FlowDeck.Specs.Steps;
 /// Binds Features/Cluster/Claiming.feature.
 /// </summary>
 [Binding]
-[Scope(Tag = "M6")]
+[Scope(Feature = "Claiming an instance")]
 public sealed class ClaimingSteps(EngineContext world)
 {
     private static readonly DateTimeOffset T0 = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
@@ -195,6 +195,10 @@ public sealed class ClaimingSteps(EngineContext world)
 
         public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
             inner.PurgeAsync(completedBefore, cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf, int limit, CancellationToken cancellationToken = default) =>
+            inner.FindClaimableAsync(asOf, limit, cancellationToken);
     }
 
     // ------------------------------------------------------------- renewal

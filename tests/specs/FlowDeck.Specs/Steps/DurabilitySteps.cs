@@ -242,6 +242,10 @@ public sealed class DurabilitySteps(EngineContext world)
 
         public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
             inner.PurgeAsync(completedBefore, cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf, int limit, CancellationToken cancellationToken = default) =>
+            inner.FindClaimableAsync(asOf, limit, cancellationToken);
     }
 
     /// <summary>Stops accepting writes after N saves — a host that died.</summary>
@@ -284,5 +288,9 @@ public sealed class DurabilitySteps(EngineContext world)
 
         public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
             inner.PurgeAsync(completedBefore, cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf, int limit, CancellationToken cancellationToken = default) =>
+            inner.FindClaimableAsync(asOf, limit, cancellationToken);
     }
 }

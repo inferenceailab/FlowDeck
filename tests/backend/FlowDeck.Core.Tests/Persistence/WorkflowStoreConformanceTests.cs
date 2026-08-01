@@ -409,6 +409,67 @@ public abstract class WorkflowStoreConformanceTests
         Assert.Null(released.LeaseExpiresAt);
     }
 
+    // ---------------------------------------------------------- claimable
+
+    [SkippableFact]
+    public async Task Claimable_work_excludes_live_leases_and_terminal_instances()
+    {
+        // #146. The query every node runs on a timer, so the contract has to
+        // pin exactly what it offers. A provider that returned a live lease
+        // would hand running work to a second node; one that returned a
+        // terminal instance would "recover" a workflow that finished.
+        var store = await this.CreateStoreAsync();
+
+        var unowned = NewRecord(status: InstanceStatus.Suspended, createdAt: T0);
+        var lapsed = NewRecord(status: InstanceStatus.Running, createdAt: T0.AddMinutes(1)) with
+        {
+            OwnerNodeId = "dead-node",
+            LeaseExpiresAt = T0.AddSeconds(-1),
+        };
+        var live = NewRecord(status: InstanceStatus.Running, createdAt: T0.AddMinutes(2)) with
+        {
+            OwnerNodeId = "busy-node",
+            LeaseExpiresAt = T0.AddMinutes(10),
+        };
+        var finished = NewRecord(status: InstanceStatus.Completed, createdAt: T0.AddMinutes(3)) with
+        {
+            CompletedAt = T0.AddMinutes(4),
+            OwnerNodeId = "dead-node",
+            LeaseExpiresAt = T0.AddSeconds(-1),
+        };
+
+        foreach (var record in new[] { unowned, lapsed, live, finished })
+        {
+            await store.CreateAsync(record);
+        }
+
+        var claimable = await store.FindClaimableAsync(T0, limit: 10);
+
+        Assert.Equal([unowned.Id, lapsed.Id], claimable.Select(record => record.Id));
+    }
+
+    [SkippableFact]
+    public async Task Claimable_work_comes_oldest_first_and_respects_the_limit()
+    {
+        // Oldest first, so work abandoned longest ago is recovered rather than
+        // starved by a steady arrival of newer instances. The limit matters
+        // because every claimed instance is a lease the node must renew.
+        var store = await this.CreateStoreAsync();
+
+        var oldest = NewRecord(status: InstanceStatus.Suspended, createdAt: T0);
+        var middle = NewRecord(status: InstanceStatus.Suspended, createdAt: T0.AddMinutes(1));
+        var newest = NewRecord(status: InstanceStatus.Suspended, createdAt: T0.AddMinutes(2));
+
+        foreach (var record in new[] { newest, oldest, middle })
+        {
+            await store.CreateAsync(record);
+        }
+
+        var claimable = await store.FindClaimableAsync(T0.AddHours(1), limit: 2);
+
+        Assert.Equal([oldest.Id, middle.Id], claimable.Select(record => record.Id));
+    }
+
     // --------------------------------------------------------------- list
 
     [SkippableFact]

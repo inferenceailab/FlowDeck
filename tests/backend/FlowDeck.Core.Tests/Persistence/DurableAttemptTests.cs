@@ -262,5 +262,9 @@ public class DurableAttemptTests
 
         public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
             this.inner.PurgeAsync(completedBefore, cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf, int limit, CancellationToken cancellationToken = default) =>
+            this.inner.FindClaimableAsync(asOf, limit, cancellationToken);
     }
 }

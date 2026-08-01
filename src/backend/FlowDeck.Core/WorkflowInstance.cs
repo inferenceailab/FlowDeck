@@ -113,6 +113,25 @@ public sealed class WorkflowInstance
     public int Revision { get; internal set; }
 
     /// <summary>
+    /// The node holding this instance, or <see langword="null"/> if none.
+    /// </summary>
+    /// <remarks>
+    /// Carried through <see cref="ToRecord"/> and back, so a checkpoint
+    /// preserves the lease rather than clearing it.
+    ///
+    /// <para>
+    /// Omitting it meant every save wiped the owner: a node lost its claim on
+    /// the first step it completed, and a peer could take the instance out from
+    /// under it while it was still running. The engine does not otherwise care
+    /// about ownership — it simply must not destroy it.
+    /// </para>
+    /// </remarks>
+    public string? OwnerNodeId { get; internal set; }
+
+    /// <summary>When this node's claim lapses if it is not renewed.</summary>
+    public DateTimeOffset? LeaseExpiresAt { get; internal set; }
+
+    /// <summary>
     /// Whether this instance has reached a state from which it will not
     /// continue on its own.
     /// </summary>
@@ -141,6 +160,8 @@ public sealed class WorkflowInstance
         Data = data.Snapshot(),
         Input = input,
         Revision = this.Revision,
+        OwnerNodeId = this.OwnerNodeId,
+        LeaseExpiresAt = this.LeaseExpiresAt,
     };
 
     /// <summary>Rebuilds an instance from its durable form.</summary>
@@ -150,6 +171,8 @@ public sealed class WorkflowInstance
             Status = record.Status,
             CurrentStepIndex = record.CurrentStepIndex,
             StepAttempts = record.StepAttempts,
+            OwnerNodeId = record.OwnerNodeId,
+            LeaseExpiresAt = record.LeaseExpiresAt,
             CurrentStepName = record.CurrentStepName,
             CompletedAt = record.CompletedAt,
             FailedStepName = record.FailedStepName,

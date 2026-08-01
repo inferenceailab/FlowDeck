@@ -51,6 +51,10 @@ public class CheckpointingTests
 
         public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
             inner.PurgeAsync(completedBefore, cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf, int limit, CancellationToken cancellationToken = default) =>
+            inner.FindClaimableAsync(asOf, limit, cancellationToken);
     }
 
     private sealed class NoopStep : IStep

@@ -46,6 +46,12 @@ public class HealthEndpointTests
 
         public Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default) =>
             throw Down();
+
+        public Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+            DateTimeOffset asOf,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            throw Down();
     }
 
     private static FlowDeckApiFactory BrokenStore() =>
