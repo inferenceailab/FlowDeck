@@ -813,7 +813,7 @@ caught separately from faults thrown by your step code.
 | Cancelling an instance does not roll it back | #124 |
 | A suspended instance cannot be resumed over HTTP | #68 |
 | No authentication on the API | #42 |
-| Definitions are C# classes registered at startup | #40 |
+| Definitions are C# classes registered at startup | #183 |
 
 Three earlier entries have gone because M6 fixed them: an instance left `Running`
 by a crash is now recovered by another node's dispatcher, so are interrupted

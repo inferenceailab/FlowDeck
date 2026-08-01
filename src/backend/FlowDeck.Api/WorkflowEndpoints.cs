@@ -199,7 +199,7 @@ public static class WorkflowEndpoints
     /// <para>
     /// Read-only. Definitions are C# classes registered at startup, so there is
     /// nothing to POST - the brief specifies steps implemented directly in C#,
-    /// and #40 is where authoring over the wire would be decided.
+    /// and #183 is where authoring over the wire would be decided.
     /// </para>
     /// </remarks>
     private static Task<Ok<WorkflowDefinitionResponse[]>> ListDefinitionsAsync(WorkflowRegistry registry)

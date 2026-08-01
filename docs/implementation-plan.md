@@ -25,15 +25,19 @@ earlier work, that is reported rather than staged as a false RED.
 | **M2** | **Persistence & Recovery** | **#13–#22** | ✅ **Complete (10/10)** |
 | **M3** | **Minimal API Surface** | **#23–#30** | ✅ **Complete (8/8)** |
 | **M4** | **Dashboard Skeleton** | **#31–#36, #62, #92** | ✅ **Complete (8/8)** |
-| M5 | Retries & Error Handling | #37 (#103–#108), #38 | In progress |
-| M6 | Distributed Execution | #39 | Epic only |
-| M7 | Visual Designer | #40 | Epic only |
+| **M5** | **Retries & Error Handling** | **#37, #38, #103–#108, #118–#123** | ✅ **Complete (14/14)** |
+| **M6** | **Distributed Execution** | **#39, #143–#150** | ✅ **Complete (9/9)** |
+| **M7** | **Branching, Parallel Execution & Visualisation** | **#40, #161–#167, #171, #172, #181** | ✅ **Complete (11/11)** |
 | M8 | Observability | #41 | Epic only |
 | M9 | Production Hardening | #42, #43, #67 | Epic only |
-| M10 | Operator Control | #66, #68 | Epic only |
+| M10 | Operator Control | #66, #68, #124, #179 | Epic only |
 
 M1–M4 together form one vertical slice: define a workflow in C# → execute it →
 survive a restart → drive it over HTTP → watch it in a dashboard.
+
+M5–M7 make that slice survive contact with reality: steps that fail and are
+retried, work that must be undone, more than one node, and workflows that are
+not straight lines.
 
 ## M1 — Core Engine Primitives ✅
 
@@ -122,7 +126,8 @@ characterization-only stories this milestone, unlike M1 and M2.
 
 **Scope note:** #30 is titled "register a definition over HTTP" but its scenario
 only requires listing. Definitions are C# classes registered at startup, so
-there is nothing to POST; authoring over the wire is #40's question.
+there is nothing to POST; authoring over the wire is #183's question — it was
+#40's until M7 delivered that epic's read-only half and closed it.
 
 **Carried forward:** the API has **no authentication** (#42), cannot resume a
 suspended instance (#68), and does not expose execution history at all despite
@@ -169,6 +174,164 @@ in CI".
 instances are reachable in the UI; no workflow-definitions view; and no way to
 resume a suspended instance (#68).
 
+## M5 — Retries & Error Handling ✅
+
+Two epics in one milestone, because they are the same subject from both ends:
+what to do when a step fails, and what to do about the steps that already
+succeeded.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #37 | Retry epic | [ADR-0020](adr/0020-retry-semantics.md) — written before #103 |
+| #103 | Retry policy on a step | `RetryPolicy`, `WithRetryPolicy` |
+| #104 | Workflow-wide default | Forward-applying, unlike `WithCompensation` |
+| #105 | Backoff with jitter | Blocks the calling task — still open as #39's neighbour |
+| #106 | Attempt count survives restart | `StepAttempts` persisted |
+| #107 | Every attempt in history | Attempt numbers from 1; carried to the dashboard |
+| #108 | Idempotence documented | Prose asserted against the file, not just examples compiled |
+| #38 | Compensation epic | [ADR-0021](adr/0021-compensation-semantics.md) |
+| #118 | Declare a compensating action | Backwards-applying; null, not a no-op action |
+| #119, #120, #121 | Roll back on failure | Shipped together — see below |
+| #122 | Compensation over HTTP and in the dashboard | Two new terminal statuses reach the UI |
+| #123 | Compensation documented | Including that it is best-effort |
+
+**#119, #120 and #121 shipped as one PR deliberately.** Rollback and its terminal
+status are one mechanism: #119 alone would be a rollback reporting the wrong
+status, and a test asserting `Failed` on a fully compensated instance would have
+been written and immediately deleted.
+
+**Found while building, not by planning:**
+
+- **A mutation test found a decision that nothing tested.** With #119 and #120
+  green, replacing "continue past a failing compensating action" with "stop at
+  the first" left all 29 tests passing — a choice ADR-0021 had made explicitly.
+  A decision nothing tests is a comment. #121 was pulled forward into the same
+  PR; the same mutation now fails three tests.
+- **Idempotence became load-bearing in a second place.** #108 required it for
+  retries. #38 then relied on it to justify compensating a step *once* however
+  many attempts it made — the attempts shared one key and therefore one side
+  effect.
+- **`int32` generates as `number | string`** in the client, because the served
+  OpenAPI document declares it as either. Coerced in the component rather than
+  compared loosely in a template, where `'2' > 1` would be a string comparison
+  doing the right thing for the wrong reason.
+
+**Carried forward:** a retry backoff still blocks the calling task, and there is
+no dead-letter or give-up-and-park outcome.
+
+## M6 — Distributed Execution ✅
+
+The milestone that made the "one instance, one worker" comment true rather than
+hopeful.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #39 | Multi-node epic | [ADR-0023](adr/0023-multi-node-execution.md) |
+| #143 | Owner and lease on an instance | On the instance record, not a separate store |
+| #144, #145 | Claim and renew | Built on `SaveAsync` and its `Revision` guard alone |
+| #146, #147 | Recover abandoned work | Per-node dispatcher; no leader, no election |
+| #148 | Show the owning node | `awaitingRecovery` computed server-side |
+| #149 | Release leases on shutdown | Clean stop hands work back rather than waiting for expiry |
+| #150 | Multi-node documented | Including the duplicate-execution window |
+
+**Claiming needed no new provider surface.** Two nodes that read the same
+instance and both write are already resolved by the concurrency token the
+conformance suite enforces on every provider, so atomic claiming inherited a
+guarantee that was already tested.
+
+**Found while building, not by planning:**
+
+- **Every checkpoint was silently wiping the lease.** `ToRecord` did not carry
+  `OwnerNodeId` or `LeaseExpiresAt`, so a node claimed an instance, ran a step,
+  checkpointed and lost its claim — a peer could take the instance out from
+  under it mid-run. The scenario asserting the dispatcher *releases* the lease
+  had been passing the whole time, for the wrong reason. Found by mutation
+  testing, not by a failing test.
+- **A scenario was not testing its own name.** "The dispatcher survives a
+  failing instance" passed against a mutation deleting the exception handling
+  entirely, because a failing workflow never throws — the engine records the
+  failure and returns.
+- **An unreachable store took the dispatcher loop down with it**, which would
+  have left every node permanently idle while still reporting itself alive. The
+  catch is now deliberately broad, with the reason written down and failures
+  counted rather than swallowed.
+- **Two scenarios were never running at all** — they did not appear in
+  `--list-tests`.
+
+**Honest limitation:** a lease lapsing while its owner is still working lets two
+nodes execute the same step. Fencing on `Revision` means only one records
+progress, which bounds the damage without preventing it. That is a real
+weakening of NFR-1, recorded in ADR-0023 rather than left implied.
+
+**Carried forward:** recovery is not load balancing — an instance started on a
+busy node stays there.
+
+## M7 — Branching, Parallel Execution & Visualisation ✅
+
+**The milestone was renamed.** It began as "Visual Designer". Workflows were
+strictly linear, so a canvas would have been drawing a straight line and
+implying engine features that did not exist. The engine work comes first and the
+visual view second, which is what #161 exists for and why #40 could not have been
+decomposed before it.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #161 | Branching epic | [ADR-0024](adr/0024-branching-and-parallel-execution.md) |
+| #162 | Declare a branch and a fork | `Branch`, `BranchWhen`, `Fork`; names unique graph-wide |
+| #163 | Set-valued position | `ActiveNode`; `CurrentStepIndex` becomes a projection |
+| #164 | Concurrent branches | Parallel execution, checkpoints through one writer |
+| #165 | Compensate a graph | Rollback walks history backwards, not the sequence |
+| #166 | Recover a forked instance | Resume from the stored set, matched by name |
+| #171 | Shape over HTTP | `WorkflowGraph.Of`; a condition reports *that* it is one |
+| #172 | Shape in the dashboard | Nested lists, not a canvas |
+| #167 | Branching documented | The data hazard stated where an author will look |
+| #181 | Run overlay | History drawn on the shape; closes #40 |
+
+**Parallel branches run genuinely concurrently**, which broke the invariant
+everything since M2 rested on: that one instance is executed by one worker. That
+was chosen knowing the cost, so the machinery was made honest rather than the
+comment left lying. Concurrency is confined to step execution — checkpoints
+serialise through a single per-instance writer, because concurrent branches each
+holding a stale `Revision` would have every save but one rejected.
+
+**Found while building, not by planning:**
+
+- **`ActiveNode` needed hand-written structural equality.** The compiler's
+  version compares `BranchPath` by reference, so two nodes describing the same
+  position were unequal whenever the lists were separate objects — which is
+  always, once one side has been through a store. Not only a test problem:
+  anything diffing a position against the one it last saw would see a change on
+  every read.
+- **The fork must checkpoint before starting its arms.** A crash between opening
+  the fork and the first arm's first checkpoint would otherwise find an instance
+  recorded at the step that forked, with no way to know it had.
+- **Recovery matches on step name, not branch path.** `Fork` labels every fork's
+  arms `branch-1` and `branch-2`, so two forks in one workflow produce identical
+  paths. The path is for reading a position, not for finding one.
+- **A limitation cited a closed issue, and gave a reason that had stopped being
+  true.** #164 refused `Outcome.Suspend` inside a branch because the durable
+  position was the branching step; #163 and #166 removed that reason and the
+  guard outlived it. What genuinely blocks it is that nobody has decided what
+  `Suspended` means while sibling branches are still running — now #179.
+
+**Honest limitation:** only a *choice* can prove a branch was skipped. "Not
+reached yet" and "on a path we skipped" look identical for most of a run, and a
+fork runs every arm, so the run overlay marks nothing as not taken there.
+
+**Carried forward:** best-effort branches have no expression at all — any branch
+failure fails the instance, deliberately (#161); suspending inside a branch fails
+(#179); and definitions are still C# classes registered at startup, so the
+*designer* half of #40's title is a canvas nobody can draw on. That is #183, and
+it is blocked on authentication (#42) before it is blocked on anything else —
+authoring a definition remotely is composing code remotely.
+
+**#40 was closed with half its title undelivered**, which is worth saying plainly
+rather than letting a green milestone imply otherwise. The read-only half — shape
+over HTTP, shape rendered, run drawn on it — is done. Authoring was never
+decomposed because its open questions were never settled, and closing the epic
+without a successor would have left four live references pointing at a closed
+issue. Hence #183.
+
 ## M2 — original sequencing notes
 
 The milestone that makes FlowDeck real. Everything M1 built is lost on restart.
@@ -213,10 +376,13 @@ currently only completable from inside the process that started it.
 
 ## Blocked work
 
-| Blocker | Impact |
+Both entries here are now closed, kept because what unblocked them is worth
+remembering.
+
+| Blocker | Resolution |
 | --- | --- |
-| **No self-hosted runner registered** | Every CI/CD run queues indefinitely. All test results to date are from local runs; the pipeline has never verified anything. |
-| CodeQL detected `languages: []` | Configured before any code existed. Should pick up C# now — needs checking. |
+| ~~No self-hosted runner registered~~ | CI moved to GitHub-hosted runners. Every run had been queueing indefinitely, so the pipeline had verified nothing up to that point — all results were from local runs. CD still targets a self-hosted runner, which is the part that genuinely needs one. |
+| ~~CodeQL detected `languages: []`~~ | Configured before any code existed. A second, conflicting CodeQL workflow was deleted; the default setup now analyses C#, TypeScript and Actions. |
 
 ## Process debt
 
@@ -228,6 +394,8 @@ Recorded so it is not repeated.
 | ADRs were written retrospectively after M1 | Future ADRs ship in the same PR as the change |
 | Frontend milestones have no stories for accessibility or i18n | ✅ Closed by #62: ADR-0016, ADR-0017, ADR-0018 written before M4 started |
 | Four product areas were under-covered or mis-filed - found by review, not by planning | #66, #67, #68 and a scope question on #38 |
+| Decisions made in an ADR but tested by nothing — found by mutation testing in M5 and M6, not by a failing test | Mutation testing is now run on the milestone's riskiest paths before the PR |
+| A limitation pointed at a closed issue, with a reason that had stopped being true | Found while writing #167. Documented limits name a **live** issue, and the reason is re-read when the code it describes changes |
 
 ## Definition of Done
 

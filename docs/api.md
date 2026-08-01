@@ -222,7 +222,7 @@ unauthenticated.
 | Resume a suspended instance | A suspended workflow cannot be completed over HTTP at all | #68 |
 | Retry or re-run | Cancel is the only operator action | #66 |
 | Rate limiting | A client can start instances as fast as it can send | — |
-| Registering definitions | Definitions are C# classes registered at startup | #40 |
+| Registering definitions | Definitions are C# classes registered at startup | #183 |
 
 The resume gap is the sharpest: an instance that suspends can only be continued
 by code holding the engine object, in-process.
