@@ -12,8 +12,12 @@ graph TB
     subgraph views["Views"]
         SHELL["App shell<br/>navigation"]
         LIST["Instance list"]
-        DETAIL["Instance detail<br/>step timeline"]
+        DETAIL["Instance detail<br/>timeline + run overlay"]
         WORKFLOW["Workflow detail<br/>declared shape"]
+    end
+
+    subgraph shared["Shared components"]
+        SHAPE["WorkflowShape<br/><i>nested lists, optional marks</i>"]
     end
 
     subgraph state["Services"]
@@ -29,11 +33,19 @@ graph TB
     SHELL --> WORKFLOW
     LIST --> INSTANCES
     DETAIL --> INSTANCES
+    DETAIL --> WORKFLOWS
+    DETAIL --> SHAPE
     WORKFLOW --> WORKFLOWS
+    WORKFLOW --> SHAPE
     INSTANCES --> CLIENT
     WORKFLOWS --> CLIENT
     CLIENT --> API
 ```
+
+**One renderer, drawn twice.** The workflow view passes a shape and no marks;
+the instance view passes the same shape with what a run did to each step. Two
+copies of a recursive renderer would drift, and the drift would be silent —
+both would still draw *a* shape (#181).
 
 **Components render. Services fetch.** No component touches `HttpClient`
 directly — see [ADR-0018](adr/0018-frontend-state-management.md) for why that is

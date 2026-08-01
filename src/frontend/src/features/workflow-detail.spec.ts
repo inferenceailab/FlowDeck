@@ -15,11 +15,18 @@ const open = (definition: WorkflowDefinitionDetail): Promise<Rendered> =>
 
 const textOf = (element: Element | null): string => element?.textContent?.trim() ?? '';
 
-/** Step names at the top level of the shape, in rendered order. */
+/**
+ * Step names at the top level of the shape, in rendered order.
+ *
+ * Anchored to the outermost list rather than to every `.shape-step`, because
+ * the branch bodies are `.shape-step`s too and a flat query would return them
+ * as though they sat in the top-level sequence. The `app-workflow-shape` in the
+ * path is the shared renderer both detail views draw with (#181).
+ */
 const topLevelStepNames = (view: Rendered): string[] =>
-  Array.from(view.element.querySelectorAll(':scope > div > ol.shape > li.shape-step')).map(
-    (step) => textOf(step.querySelector('.step-name')),
-  );
+  Array.from(
+    view.element.querySelectorAll(':scope > div > app-workflow-shape > ol.shape > li.shape-step'),
+  ).map((step) => textOf(step.querySelector('.step-name')));
 
 const stepNamed = (view: Rendered, name: string): HTMLElement =>
   Array.from(view.element.querySelectorAll<HTMLElement>('li.shape-step')).find(

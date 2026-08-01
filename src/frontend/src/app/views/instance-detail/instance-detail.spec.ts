@@ -58,6 +58,18 @@ awaitingRecovery: false,
   function respond(body: Instance, history: StepHistoryEntry[]): void {
     http.expectOne(`/api/instances/${id}`).flush(body);
     http.expectOne(`/api/instances/${id}/history`).flush(history);
+
+    // The shape, chained off the instance now that the view draws the run on
+    // it (#181). Answered with no steps: what the overlay marks has its own
+    // scenarios in run-overlay.feature, and these tests are about the timeline.
+    // Left unanswered it would simply fail http.verify() in afterEach.
+    http.expectOne((request) => request.url.startsWith('/api/workflows/')).flush({
+      id: body.definitionId,
+      version: body.definitionVersion,
+      inputTypeName: null,
+      steps: [],
+    });
+
     fixture.detectChanges();
   }
 

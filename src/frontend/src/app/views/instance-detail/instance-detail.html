@@ -190,6 +190,30 @@
         </div>
       }
 
+      <h2 i18n>Shape</h2>
+
+      <!--
+        The run drawn on the workflow it is running. The timeline below says
+        what happened in order; this says where in the workflow it happened,
+        which is otherwise left for the operator to reconstruct from a list of
+        names.
+      -->
+      @if (shape()) {
+        <app-workflow-shape [steps]="shape()!.steps" [marks]="marks()" />
+      } @else if (shapeUnavailable()) {
+        <!--
+          Said, not silently omitted. A missing section reads as "this workflow
+          has no shape", which is never true - and the usual cause is an
+          in-flight instance on a version since dropped from the registry,
+          which is worth an operator knowing.
+        -->
+        <p class="state shape-unavailable" i18n>
+          The shape of {{ instance()!.definitionId }} v{{ instance()!.definitionVersion }} could
+          not be loaded. It may no longer be registered on this host. The timeline below is
+          unaffected.
+        </p>
+      }
+
       <h2 i18n>Timeline</h2>
 
       @if (history().length === 0) {
