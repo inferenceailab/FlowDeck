@@ -93,10 +93,11 @@ describe('feature files', () => {
       .filter((line) => line.startsWith('Scenario:'));
 
     // Eleven from M4 (#31-#36), two from #122 whose other two scenarios are
-    // observable over HTTP and live in the backend specs, and three from #148.
+    // observable over HTTP and live in the backend specs, three from #148, and
+    // five from #172.
     //
     // A hard number rather than a lower bound: it is the one thing that makes
     // deleting a scenario fail rather than quietly shrinking the suite.
-    expect(titles.length).toBe(16);
+    expect(titles.length).toBe(21);
   });
 });

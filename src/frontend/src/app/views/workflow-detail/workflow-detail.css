@@ -1,0 +1,138 @@
+.detail-header {
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+  margin: 0 0 0.25rem;
+}
+
+h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 1.75rem 0 0.75rem;
+}
+
+.version,
+.definition-input {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.definition-input {
+  margin: 0;
+}
+
+/*
+  Numbered, because the number is the point: it is the order the engine runs
+  them in. The counter is drawn by the list itself rather than by content
+  injected in CSS, so a screen reader announces the position too.
+*/
+.shape {
+  list-style: decimal;
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.shape-step {
+  margin: 0.35rem 0;
+}
+
+.step-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.step-name {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+/*
+  Both badges carry a word, never a colour or glyph alone (ADR-0016). Roughly
+  one in twelve men has a colour vision deficiency, and "this step can run
+  twice" is not a detail to encode in a hue.
+*/
+.step-retry,
+.step-undo,
+.branch-condition {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.branch-set {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+
+/*
+  The sentence that separates a fork from a choice. Stated once above the arms
+  rather than repeated on each, because it is a property of the split.
+*/
+.branch-rule {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/*
+  Unordered, unlike the steps. A fork's arms genuinely have no order - they run
+  at the same time - and numbering them would imply one goes first.
+*/
+.branches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.branch {
+  margin: 0.5rem 0;
+}
+
+.branch-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 0.25rem;
+}
+
+.branch-name {
+  font-weight: 600;
+}
+
+.state {
+  padding: 1rem;
+  color: var(--text-muted);
+}
+
+.state p {
+  margin: 0 0 0.5rem;
+}
+
+.state-error {
+  border: 1px solid var(--status-failed);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.state-error button {
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.state-error button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

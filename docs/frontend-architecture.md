@@ -1,8 +1,9 @@
 # Frontend architecture
 
-> **Status:** planned for M4. Nothing here is built yet. This document exists
-> because #62 requires the decisions settled *before* the dashboard, not after —
-> the same process fix ADR-0016 and ADR-0017 exist for.
+> **Status:** built. This document was written before the dashboard existed,
+> because #62 required the decisions settled *before* it rather than after — the
+> same process fix ADR-0016 and ADR-0017 exist for. It is kept as the map of
+> what is there now, so the decisions and the code stay in the same place.
 
 ## Shape
 
@@ -12,11 +13,12 @@ graph TB
         SHELL["App shell<br/>navigation"]
         LIST["Instance list"]
         DETAIL["Instance detail<br/>step timeline"]
+        WORKFLOW["Workflow detail<br/>declared shape"]
     end
 
     subgraph state["Services"]
         INSTANCES["InstanceService<br/><i>signals</i>"]
-        DEFS["DefinitionService<br/><i>signals</i>"]
+        WORKFLOWS["WorkflowService<br/><i>signals</i>"]
     end
 
     CLIENT["Generated API client<br/><i>from OpenAPI</i>"]
@@ -24,11 +26,12 @@ graph TB
 
     SHELL --> LIST
     SHELL --> DETAIL
+    SHELL --> WORKFLOW
     LIST --> INSTANCES
     DETAIL --> INSTANCES
-    LIST --> DEFS
+    WORKFLOW --> WORKFLOWS
     INSTANCES --> CLIENT
-    DEFS --> CLIENT
+    WORKFLOWS --> CLIENT
     CLIENT --> API
 ```
 

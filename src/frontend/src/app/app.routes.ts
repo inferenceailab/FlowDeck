@@ -36,6 +36,14 @@ export const routes: Routes = [
     loadComponent: () => import('./views/workflow-list/workflow-list').then((m) => m.WorkflowList),
   },
   {
+    // A sibling of the list for the same reason the instance detail is: it
+    // fetches by id and does not need the list loaded.
+    path: 'workflows/:definitionId',
+    title: 'Workflow - FlowDeck',
+    loadComponent: () =>
+      import('./views/workflow-detail/workflow-detail').then((m) => m.WorkflowDetail),
+  },
+  {
     // A wildcard rather than a silent redirect home: a mistyped URL should say
     // so, not quietly land somewhere plausible and leave the operator
     // wondering why the page is not what they expected.

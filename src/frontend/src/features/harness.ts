@@ -58,6 +58,12 @@ export async function renderView<T>(
     readonly interact?: (fixture: ComponentFixture<T>, flush: () => void) => void | Promise<void>;
   },
 ): Promise<Rendered> {
+  // Reset first, so a step can render more than once. "Given a definition with
+  // a fork and a definition with a choice" has to build both and compare them,
+  // and TestBed refuses to be configured twice once instantiated. A no-op on
+  // the first render of a step, which is every other scenario here.
+  TestBed.resetTestingModule();
+
   await TestBed.configureTestingModule({
     imports: [component],
     providers: [provideHttpClient(withFetch()), provideHttpClientTesting(), provideRouter([])],

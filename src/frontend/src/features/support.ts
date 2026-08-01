@@ -1,4 +1,12 @@
-import { Instance, InstancePage, InstanceStatus, StepHistoryEntry } from '../app/api/models';
+import {
+  Instance,
+  InstancePage,
+  InstanceStatus,
+  StepHistoryEntry,
+  WorkflowBranch,
+  WorkflowDefinitionDetail,
+  WorkflowStep,
+} from '../app/api/models';
 
 /**
  * Fixtures the feature files describe in prose.
@@ -55,6 +63,40 @@ export const aStep = (
   errorType: null,
   errorMessage: null,
   ...overrides,
+});
+
+export const DEFINITION_ID = 'order-fulfilment';
+
+/**
+ * A declared step, defaulting to the plain case: runs once, no undo, no
+ * branches. A scenario overrides only the thing it is about, so a reader can
+ * see what the scenario claims is significant.
+ */
+export const aWorkflowStep = (name: string, overrides: Partial<WorkflowStep> = {}): WorkflowStep => ({
+  name,
+  maxAttempts: 1,
+  hasCompensation: false,
+  branches: [],
+  ...overrides,
+});
+
+export const aBranch = (
+  name: string,
+  steps: WorkflowStep[],
+  overrides: Partial<WorkflowBranch> = {},
+): WorkflowBranch => ({
+  name,
+  isConditional: false,
+  isParallel: false,
+  steps,
+  ...overrides,
+});
+
+export const aDefinition = (...steps: WorkflowStep[]): WorkflowDefinitionDetail => ({
+  id: DEFINITION_ID,
+  version: 1,
+  inputTypeName: null,
+  steps,
 });
 
 export const INSTANCES_URL = '/api/instances';
