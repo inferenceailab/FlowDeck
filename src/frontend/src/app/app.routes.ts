@@ -5,7 +5,7 @@ import { Routes } from '@angular/router';
  *
  * Views are lazily loaded so the shell renders before their code is fetched.
  * With two views that saves little; establishing it now means it does not have
- * to be retrofitted once the designer (#40) arrives.
+ * to be retrofitted once the designer (#183) arrives.
  *
  * Each route sets a title, so a browser tab and the accessible page name say
  * where you are rather than all reading "flowdeck-dashboard".
