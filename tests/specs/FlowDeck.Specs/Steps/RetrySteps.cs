@@ -186,8 +186,23 @@ public sealed class RetrySteps(EngineContext world)
         var starts = history.Select(entry => entry.StartedAt).ToArray();
 
         Assert.Equal(3, starts.Length);
-        Assert.Equal(TimeSpan.FromSeconds(seconds), starts[1] - starts[0]);
-        Assert.Equal(TimeSpan.FromSeconds(seconds), starts[2] - starts[1]);
+
+        // At least the configured delay, not exactly it. A backoff guarantees a
+        // minimum - retrying sooner would hammer a failing service, retrying
+        // later would not - and with jitter a minimum is all it can promise.
+        //
+        // It is also all this scenario can observe: it drives the clock from
+        // outside the engine, so it may advance past the delay before the
+        // engine has registered its timer. Asserting equality passed on one
+        // machine and reported a four second gap on another.
+        for (var attempt = 1; attempt < starts.Length; attempt++)
+        {
+            var gap = starts[attempt] - starts[attempt - 1];
+
+            Assert.True(
+                gap >= TimeSpan.FromSeconds(seconds),
+                $"attempt {attempt + 1} began {gap} after the previous one, less than the {seconds}s delay");
+        }
     }
 
     [Then("no real time passes")]

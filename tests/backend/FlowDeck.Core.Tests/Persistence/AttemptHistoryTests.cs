@@ -235,7 +235,23 @@ public class AttemptHistoryTests
         var history = await engine.GetHistoryAsync((await run).Id);
         var starts = history.Select(entry => entry.StartedAt).ToArray();
 
-        Assert.Equal(TimeSpan.FromSeconds(2), starts[1] - starts[0]);
-        Assert.Equal(TimeSpan.FromSeconds(2), starts[2] - starts[1]);
+        // At least the configured delay, not exactly it.
+        //
+        // The guarantee a backoff makes is a minimum: retrying sooner than the
+        // policy says would hammer a failing service, retrying later would not.
+        // With jitter a minimum is all it can promise anyway.
+        //
+        // Exact equality is also not something this test can observe. It drives
+        // the clock from outside the engine, so it may advance past the delay
+        // before the engine has registered its timer at all - which is how this
+        // assertion passed on one machine and reported a four second gap on
+        // another. CI found that; the developer machine never would have.
+        Assert.True(
+            starts[1] - starts[0] >= TimeSpan.FromSeconds(2),
+            $"attempt 2 began {starts[1] - starts[0]} after attempt 1, less than the 2s delay");
+
+        Assert.True(
+            starts[2] - starts[1] >= TimeSpan.FromSeconds(2),
+            $"attempt 3 began {starts[2] - starts[1]} after attempt 2, less than the 2s delay");
     }
 }
