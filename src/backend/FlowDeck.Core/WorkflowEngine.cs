@@ -604,15 +604,16 @@ public sealed class WorkflowEngine
                 {
                     if (!topLevel)
                     {
-                        // Suspending inside a branch would promise a resumption
-                        // that cannot be kept: the instance's durable position
-                        // is still the branching step, so resuming would re-run
-                        // every branch step that had already completed. Failing
-                        // says so loudly rather than duplicating side effects
-                        // quietly. Lifted by #166.
+                        // What is unsettled is not where the instance is - the
+                        // position has been set-valued since #166 - but what
+                        // Suspended would mean while sibling branches are still
+                        // running. Failure has an answer: siblings run on and
+                        // the join fails. Suspension has none, so this fails
+                        // loudly rather than parking an instance in a state no
+                        // rule covers. Lifted by #179.
                         var unsupported = new NotSupportedException(
                             $"Step '{step.Name}' suspended inside branch '{string.Join('/', cursor.BranchPath)}'. "
-                            + "Suspending inside a branch is not supported yet (#166).");
+                            + "Suspending inside a branch is not supported yet (#179).");
 
                         this.RecordFailure(step.Name, unsupported);
 
