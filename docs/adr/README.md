@@ -48,3 +48,5 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0019](0019-static-analysis.md) | SonarAnalyzer, with warnings as errors from a clean tree | Accepted | post-M4 |
 | [0020](0020-retry-semantics.md) | Retry semantics | Accepted | M5 |
 | [0021](0021-compensation-semantics.md) | Compensation semantics | Accepted | M5 |
+| [0022](0022-executable-specifications.md) | Feature files are executable, not decorative | Accepted | post-M5 |
+| [0023](0023-multi-node-execution.md) | Multi-node execution | Accepted | M6 |
