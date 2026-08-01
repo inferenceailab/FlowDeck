@@ -12,7 +12,7 @@ namespace FlowDeck.Specs.Steps;
 /// Binds Features/Cluster/Ownership.feature.
 /// </summary>
 [Binding]
-[Scope(Tag = "M6")]
+[Scope(Feature = "Instance ownership")]
 public sealed class OwnershipSteps(EngineContext world) : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);

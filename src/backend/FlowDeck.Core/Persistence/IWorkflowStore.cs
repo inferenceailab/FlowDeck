@@ -96,4 +96,37 @@ public interface IWorkflowStore
     /// </remarks>
     /// <returns>How many instances were removed.</returns>
     Task<int> PurgeAsync(DateTimeOffset completedBefore, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Instances no node is holding, oldest first.
+    /// </summary>
+    /// <param name="asOf">
+    /// The instant to judge lease expiry against — the caller's clock, not the
+    /// store's. There is no portable server timestamp across the providers this
+    /// contract covers, so the node asking decides what has lapsed (ADR-0023).
+    /// </param>
+    /// <param name="limit">
+    /// Most to return. A poll takes a batch rather than the world: a node that
+    /// pulled every abandoned instance at once would hold leases it has no
+    /// capacity to renew.
+    /// </param>
+    /// <remarks>
+    /// An instance is claimable when it is <b>not terminal</b> and either has no
+    /// owner or holds a lease that lapsed at or before <paramref name="asOf"/>.
+    ///
+    /// <para>
+    /// A separate method rather than a flag on <see cref="InstanceFilter"/>:
+    /// this is the query every node runs on a timer, it wants its own index,
+    /// and <see cref="InstanceFilter"/> exists to serve the dashboard.
+    /// </para>
+    ///
+    /// <para>
+    /// Oldest first, so work abandoned longest ago is recovered first rather
+    /// than starved by a steady arrival of newer instances.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+        DateTimeOffset asOf,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

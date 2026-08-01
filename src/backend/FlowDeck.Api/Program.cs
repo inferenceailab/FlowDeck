@@ -1,5 +1,6 @@
 using FlowDeck.Api;
 using FlowDeck.Core;
+using FlowDeck.Core.Cluster;
 using FlowDeck.Core.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
@@ -17,6 +18,29 @@ builder.Services.AddSingleton(provider => new WorkflowEngine(
     provider.GetRequiredService<WorkflowRegistry>(),
     provider.GetService<TimeProvider>(),
     provider.GetRequiredService<IWorkflowStore>()));
+
+// How this node behaves in a cluster. Validated at startup rather than on first
+// poll, so a lease shorter than its own renewal interval fails the deployment
+// instead of producing a cluster that quietly thrashes.
+builder.Services.AddSingleton(_ =>
+{
+    var options = builder.Configuration.GetSection("FlowDeck:Cluster").Get<ClusterOptions>()
+        ?? new ClusterOptions();
+
+    options.Validate();
+
+    return options;
+});
+
+builder.Services.AddSingleton(provider => new WorkflowDispatcher(
+    provider.GetRequiredService<WorkflowEngine>(),
+    provider.GetRequiredService<IWorkflowStore>(),
+    provider.GetRequiredService<ClusterOptions>(),
+    provider.GetService<TimeProvider>()));
+
+// Every node runs one, and they are all the same - no leader and no election
+// (ADR-0023). This recovers work whose node died; it does not spread load.
+builder.Services.AddHostedService<DispatcherHostedService>();
 
 // Engine faults map to status codes in one place, so a client can rely on the
 // mapping rather than inferring it per endpoint.

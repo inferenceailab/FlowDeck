@@ -231,6 +231,29 @@ public sealed class EfCoreWorkflowStore(
             .ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<WorkflowInstanceRecord>> FindClaimableAsync(
+        DateTimeOffset asOf,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = contextFactory();
+
+        var rows = await context.Instances
+            .AsNoTracking()
+            .Where(instance => instance.Status == InstanceStatus.Running
+                || instance.Status == InstanceStatus.Suspended)
+            .Where(instance => instance.OwnerNodeId == null || instance.LeaseExpiresAt <= asOf)
+
+            // Oldest first, so work abandoned longest ago is recovered first
+            // rather than starved by a steady arrival of newer instances.
+            .OrderBy(instance => instance.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. rows.Select(this.ToRecord)];
+    }
+
     private static IQueryable<StoredInstance> Filtered(IQueryable<StoredInstance> query, InstanceFilter filter)
     {
         if (filter.Status is { } status)
