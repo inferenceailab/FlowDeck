@@ -192,6 +192,42 @@ An instance pins its version at start, so deploying v2 does not change what an
 in-flight v1 instance is executing. Registering the same `(id, version)` twice
 raises `DuplicateDefinitionException`.
 
+### Deploying a new version
+
+**An in-flight instance runs to completion on the version it started.** There is
+no migration: v1 instances keep executing v1's steps while v2 instances execute
+v2's, on the same node, in the same process.
+
+**A bug in a deployed version cannot be fixed for instances already running it.**
+This is the part worth reading twice. Shipping v2 with the fix does nothing for
+the instance stuck on v1 — the only remedies are to wait for it to finish, or to
+cancel it and start again on v2.
+
+That is a deliberate trade ([ADR-0026](../adr/0026-definition-version-lifecycle.md)).
+Migrating a suspended instance to a newer definition would mean rewriting a
+persisted position, and every step v2 removed or renamed becomes a case needing
+an answer.
+
+### Retiring a version
+
+Removing a version while instances are still running it would strand them: resume
+and crash recovery both resolve through the registry, so those instances become
+unresumable and nothing says so. Retirement therefore refuses:
+
+```csharp
+// Refuses while any non-terminal instance is still running v1.
+var everRan = await engine.RetireAsync("fulfil-order", 1);
+```
+
+`DefinitionInUseException` carries **how many** instances still hold it, so you
+know whether to wait or to go and cancel something. Terminal instances neither
+block retirement nor are affected by it — their history stays readable, because an
+instance that ran is a record of what happened.
+
+To see what is holding a version before you try, `GET /api/workflows` reports
+`activeInstances` per version, and the dashboard's workflow list says which
+versions are safe to retire.
+
 ## Failure
 
 A step that throws fails the instance. The exception does **not** propagate to
@@ -814,6 +850,8 @@ caught separately from faults thrown by your step code.
 | A suspended instance cannot be resumed over HTTP | #68 |
 | No authentication on the API | #42 |
 | Definitions are C# classes registered at startup | #183 |
+| No migration: an in-flight instance cannot move to a newer version | #67 |
+| Multi-tenancy: FlowDeck does not isolate tenants, by decision | [ADR-0027](../adr/0027-multi-tenancy-and-performance.md) |
 
 Three earlier entries have gone because M6 fixed them: an instance left `Running`
 by a crash is now recovered by another node's dispatcher, so are interrupted
