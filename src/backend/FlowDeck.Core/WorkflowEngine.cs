@@ -25,13 +25,15 @@ public sealed class WorkflowEngine
     private readonly IWorkflowStore store;
     private readonly Random? random;
     private readonly ILogger<WorkflowEngine> logger;
+    private readonly EngineMetrics metrics;
 
     public WorkflowEngine(
         WorkflowRegistry registry,
         TimeProvider? timeProvider = null,
         IWorkflowStore? store = null,
         Random? random = null,
-        ILogger<WorkflowEngine>? logger = null)
+        ILogger<WorkflowEngine>? logger = null,
+        EngineMetrics? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -52,6 +54,13 @@ public sealed class WorkflowEngine
         // logger would make observability a precondition of running a workflow
         // rather than a thing a host switches on (ADR-0025 decision 1).
         this.logger = logger ?? NullLogger<WorkflowEngine>.Instance;
+
+        // Unlike the logger, the default is not silence. A Counter with no
+        // listener costs a branch, and metrics that only appear once a host
+        // opts in would make "how often does this fail" unanswerable by
+        // default. Injectable so a test can listen to its own meter rather
+        // than to every engine in the process.
+        this.metrics = metrics ?? EngineMetrics.Default;
     }
 
     /// <summary>
@@ -128,6 +137,7 @@ public sealed class WorkflowEngine
         // After the record exists, so an entry saying an instance started is
         // never about one an operator cannot then look up.
         this.logger.InstanceStarted(instance.DefinitionId, instance.DefinitionVersion);
+        this.metrics.InstanceStarted(instance);
 
         await this.RunAsync(instance, steps, data, input, resumeFrom: [], cancellationToken).ConfigureAwait(false);
 
@@ -266,6 +276,7 @@ public sealed class WorkflowEngine
         // After the save, so the entry describes a cancellation that is durable
         // rather than one a concurrency failure was about to undo.
         this.logger.InstanceCancelled(instance.DefinitionId, instance.CurrentStepName);
+        this.metrics.InstanceSettled(instance);
 
         return instance;
     }
@@ -367,6 +378,10 @@ public sealed class WorkflowEngine
                     this.logger.InstanceCompensated(instance.DefinitionId, instance.Status);
                 }
 
+                // Counted from the settled status rather than from this branch
+                // being the failure path, so an instance that rolled back is
+                // never also counted as a plain failure.
+                this.metrics.InstanceSettled(instance);
                 return;
 
             default:
@@ -380,6 +395,7 @@ public sealed class WorkflowEngine
                     instance.DefinitionId,
                     (instance.CompletedAt.Value - instance.CreatedAt).TotalMilliseconds);
 
+                this.metrics.InstanceSettled(instance);
                 return;
         }
     }
