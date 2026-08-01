@@ -91,7 +91,7 @@ public sealed class WorkflowEngine
         await this.store.CreateAsync(instance.ToRecord(data, input), cancellationToken).ConfigureAwait(false);
         instance.Revision = 1;
 
-        await this.RunAsync(instance, steps, data, input, cancellationToken).ConfigureAwait(false);
+        await this.RunAsync(instance, steps, data, input, resumeFrom: [], cancellationToken).ConfigureAwait(false);
 
         return instance;
     }
@@ -121,7 +121,12 @@ public sealed class WorkflowEngine
 
         var data = new WorkflowData(record.Data);
 
-        await this.RunAsync(instance, steps, data, record.Input, cancellationToken).ConfigureAwait(false);
+        // The stored set, not the index. A forked instance is at several places
+        // at once and the index names only the step that forked, so resuming
+        // from it would re-run that step and every branch step already done
+        // (#166).
+        await this.RunAsync(instance, steps, data, record.Input, record.ActiveNodes, cancellationToken)
+            .ConfigureAwait(false);
 
         return instance;
     }
@@ -263,12 +268,13 @@ public sealed class WorkflowEngine
         IReadOnlyList<StepDeclaration> steps,
         IWorkflowData data,
         object? input,
+        IReadOnlyList<ActiveNode> resumeFrom,
         CancellationToken cancellationToken)
     {
         var run = new Run(this, instance, data, input);
 
         var progress = await run
-            .SequenceAsync(steps, instance.CurrentStepIndex, branchPath: [], cancellationToken)
+            .SequenceAsync(steps, instance.CurrentStepIndex, branchPath: [], resumeFrom, cancellationToken)
             .ConfigureAwait(false);
 
         switch (progress)
@@ -358,14 +364,45 @@ public sealed class WorkflowEngine
         /// identifies the top-level sequence, which is the only one that owns
         /// the instance's linear position.
         /// </param>
+        /// <param name="resumeFrom">
+        /// The stored active set when this run is a recovery, or empty when it
+        /// is starting fresh.
+        /// </param>
         public async Task<Progress> SequenceAsync(
             IReadOnlyList<StepDeclaration> steps,
             int startIndex,
             IReadOnlyList<string> branchPath,
+            IReadOnlyList<ActiveNode> resumeFrom,
             CancellationToken cancellationToken,
             Cursor? opened = null)
         {
             var topLevel = branchPath.Count == 0;
+            var resumeAt = -1;
+            var branchesOnly = false;
+
+            if (resumeFrom.Count > 0)
+            {
+                var plan = Resumption(steps, resumeFrom);
+
+                if (plan is null)
+                {
+                    // Nothing in the stored set belongs to this sequence, so it
+                    // had already finished when the crash happened. Re-running
+                    // it is precisely what NFR-1 forbids.
+                    //
+                    // A safety net rather than the path a recovered fork takes:
+                    // BranchAsync drops finished arms before starting them, so
+                    // it normally gets here first. Breaking this branch alone
+                    // therefore fails nothing, which is deliberate - the filter
+                    // there has to exist anyway, because an arm that reached
+                    // this point would already have published a position on
+                    // work that was done.
+                    return Progress.Completed;
+                }
+
+                (resumeAt, branchesOnly) = plan.Value;
+                startIndex = resumeAt;
+            }
 
             // A fork opens its arms' cursors before it starts them, so the
             // checkpoint recording the fork already names every arm. An arm that
@@ -392,13 +429,22 @@ public sealed class WorkflowEngine
 
                     var next = index + 1 < steps.Count ? steps[index + 1].Name : null;
 
-                    var progress = await this
-                        .StepAsync(step, cursor, topLevel, index, next, cancellationToken)
-                        .ConfigureAwait(false);
+                    // The one step a recovered fork must not re-run. Its
+                    // branches were already open when the crash happened, so it
+                    // had finished doing whatever it does; only the join is
+                    // outstanding.
+                    var reopeningAFork = index == resumeAt && branchesOnly;
 
-                    if (progress != Progress.Completed)
+                    if (!reopeningAFork)
                     {
-                        return progress;
+                        var progress = await this
+                            .StepAsync(step, cursor, topLevel, index, next, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        if (progress != Progress.Completed)
+                        {
+                            return progress;
+                        }
                     }
 
                     if (step.Branches.Count == 0)
@@ -417,7 +463,8 @@ public sealed class WorkflowEngine
                     // would name a place nothing is running.
                     cursor.StepName = null;
 
-                    var branched = await this.BranchAsync(step, branchPath, cancellationToken)
+                    var branched = await this
+                        .BranchAsync(step, branchPath, reopeningAFork ? resumeFrom : [], cancellationToken)
                         .ConfigureAwait(false);
 
                     if (branched != Progress.Completed)
@@ -634,22 +681,45 @@ public sealed class WorkflowEngine
         private async Task<Progress> BranchAsync(
             StepDeclaration step,
             IReadOnlyList<string> branchPath,
+            IReadOnlyList<ActiveNode> resumeFrom,
             CancellationToken cancellationToken)
         {
             if (!step.Branches[0].IsParallel)
             {
-                // Conditions are tested in declaration order and the first match
-                // wins, so an author reads them the way they read an if/else if
-                // chain. No match is an ordinary shape, not an error: failing
-                // would make every branch set implicitly require a catch-all
-                // (ADR-0024 decision 6).
-                var chosen = step.Branches.FirstOrDefault(branch => branch.Condition?.Invoke(data) == true);
+                // On recovery the branch is whichever one the stored position is
+                // inside. Re-evaluating the condition would usually agree and
+                // would be wrong when it did not: a predicate over data a later
+                // step has since changed would send the instance down a path it
+                // had not taken.
+                var chosen = resumeFrom.Count > 0
+                    ? step.Branches.FirstOrDefault(branch => Holds(branch.Steps, resumeFrom))
+
+                    // Conditions are tested in declaration order and the first
+                    // match wins, so an author reads them the way they read an
+                    // if/else if chain. No match is an ordinary shape, not an
+                    // error: failing would make every branch set implicitly
+                    // require a catch-all (ADR-0024 decision 6).
+                    : step.Branches.FirstOrDefault(branch => branch.Condition?.Invoke(data) == true);
 
                 return chosen is null
                     ? Progress.Completed
                     : await this
-                        .SequenceAsync(chosen.Steps, 0, [.. branchPath, chosen.Name], cancellationToken)
+                        .SequenceAsync(
+                            chosen.Steps, 0, [.. branchPath, chosen.Name], resumeFrom, cancellationToken)
                         .ConfigureAwait(false);
+            }
+
+            // On recovery, only the arms the stored set still names. An arm that
+            // finished before the crash left no active node behind, and running
+            // it again would re-execute completed work on a sibling branch -
+            // worse than not recovering at all.
+            var live = resumeFrom.Count == 0
+                ? step.Branches
+                : [.. step.Branches.Where(branch => Holds(branch.Steps, resumeFrom))];
+
+            if (live.Count == 0)
+            {
+                return Progress.Completed;
             }
 
             // Task.Run rather than just calling the async method: an async
@@ -658,7 +728,7 @@ public sealed class WorkflowEngine
             // the fork would silently be a sequence. Author code is untrusted
             // about whether it awaits, the same way it is untrusted about
             // whether it throws.
-            var arms = step.Branches
+            var arms = live
                 .Select(branch =>
                 {
                     IReadOnlyList<string> path = [.. branchPath, branch.Name];
@@ -666,8 +736,9 @@ public sealed class WorkflowEngine
 
                     // Named before the arm starts, so the checkpoint below
                     // records where each arm is about to be rather than an empty
-                    // set that says the instance is nowhere.
-                    cursor.StepName = branch.Steps[0].Name;
+                    // set that says the instance is nowhere. On recovery that is
+                    // where the arm stopped, not where it began.
+                    cursor.StepName = Held(branch.Steps, resumeFrom)?.StepName ?? branch.Steps[0].Name;
 
                     return (Branch: branch, Path: path, Cursor: cursor);
                 })
@@ -681,7 +752,8 @@ public sealed class WorkflowEngine
 
             var running = arms
                 .Select(arm => Task.Run(
-                    () => this.SequenceAsync(arm.Branch.Steps, 0, arm.Path, cancellationToken, arm.Cursor),
+                    () => this.SequenceAsync(
+                        arm.Branch.Steps, 0, arm.Path, resumeFrom, cancellationToken, arm.Cursor),
                     cancellationToken))
                 .ToArray();
 
@@ -699,6 +771,77 @@ public sealed class WorkflowEngine
             return Array.IndexOf(results, Progress.Suspended) >= 0
                 ? Progress.Suspended
                 : Progress.Completed;
+        }
+
+        /// <summary>
+        /// Where a sequence resumes, or <see langword="null"/> if it had already
+        /// finished when the crash happened.
+        /// </summary>
+        /// <remarks>
+        /// Matched on step <b>name</b>, not on the branch path. Names are unique
+        /// graph-wide (#162), so a name identifies a node; a path does not -
+        /// <c>Fork</c> labels every fork's arms <c>branch-1</c> and
+        /// <c>branch-2</c>, so two forks in one workflow produce identical
+        /// paths. The path is for reading a position, not for finding one.
+        ///
+        /// <para>
+        /// Two answers, and the difference is what stops a fork being re-opened.
+        /// If the set names a step of this sequence, the sequence stopped there
+        /// and resumes by running it. If it instead names a step somewhere
+        /// inside one of this sequence's branches, the sequence had already
+        /// passed that branching step and is waiting at the join, so the step
+        /// itself must not run again.
+        /// </para>
+        /// </remarks>
+        private static (int Index, bool BranchesOnly)? Resumption(
+            IReadOnlyList<StepDeclaration> steps,
+            IReadOnlyList<ActiveNode> resumeFrom)
+        {
+            for (var index = 0; index < steps.Count; index++)
+            {
+                if (resumeFrom.Any(node => string.Equals(node.StepName, steps[index].Name, StringComparison.Ordinal)))
+                {
+                    return (index, false);
+                }
+
+                if (steps[index].Branches.Any(branch => Holds(branch.Steps, resumeFrom)))
+                {
+                    return (index, true);
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Whether any stored node names a step in this subtree.</summary>
+        private static bool Holds(IReadOnlyList<StepDeclaration> steps, IReadOnlyList<ActiveNode> resumeFrom) =>
+            Held(steps, resumeFrom) is not null;
+
+        /// <summary>The stored node naming a step in this subtree, if any.</summary>
+        private static ActiveNode? Held(IReadOnlyList<StepDeclaration> steps, IReadOnlyList<ActiveNode> resumeFrom)
+        {
+            foreach (var step in steps)
+            {
+                var here = resumeFrom.FirstOrDefault(
+                    node => string.Equals(node.StepName, step.Name, StringComparison.Ordinal));
+
+                if (here is not null)
+                {
+                    return here;
+                }
+
+                foreach (var branch in step.Branches)
+                {
+                    var deeper = Held(branch.Steps, resumeFrom);
+
+                    if (deeper is not null)
+                    {
+                        return deeper;
+                    }
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
