@@ -43,6 +43,16 @@ describeFeature(feature, ({ Scenario }) => {
       await TestBed.inject(Router).navigate([route]);
       fixture.detectChanges();
 
+      // A second pass, because the two signals the Then asserts on arrive in
+      // different cycles. routerLinkActive applies its CSS class directly, but
+      // aria-current is a template binding reading the directive's isActive,
+      // which is only seen on the next round of change detection.
+      //
+      // One pass happened to be enough on Windows and was not on the CI
+      // runner: the class was there, aria-current was null. Asserting after a
+      // single pass was a race, not a check.
+      fixture.detectChanges();
+
       // The lazily-loaded view's request is expected; it must simply not have
       // reached the network.
       TestBed.inject(HttpTestingController).match(() => true);
