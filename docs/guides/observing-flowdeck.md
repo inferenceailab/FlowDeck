@@ -55,13 +55,13 @@ how it is used.
 
 ### What is deliberately not measured
 
-- **Step duration.** The question an operator usually arrives with is "which step
-  is slow", and the answer today is in execution history per instance rather than
-  aggregated. The data exists; the aggregate does not.
-- **Retry and compensation counts.** Both mechanisms exist since M5 and neither is
-  visible without reading history.
-- **Cluster health** — instances running, leases held, recoveries performed. M6's
-  machinery is inferred from the dashboard rather than measured.
+- **Step duration** (#198). The question an operator usually arrives with is
+  "which step is slow", and the answer today is in execution history per instance
+  rather than aggregated. The data exists; the aggregate does not.
+- **Retry and compensation counts** (#199). Both mechanisms exist since M5 and
+  neither is visible without reading history.
+- **Cluster health** (#200) — instances running, leases held, recoveries
+  performed. M6's machinery is inferred from the dashboard rather than measured.
 
 These are scope, not oversight, and each is tracked.
 
@@ -149,9 +149,10 @@ apart; it is not something a log reader should have to parse.
 | Limitation | Tracked by |
 | --- | --- |
 | `/metrics` is unauthenticated | #42 |
-| No step-duration, retry or cluster metrics | — |
+| No step-duration metric | #198 |
+| No retry or per-action compensation counters | #199 |
+| No cluster health metrics | #200 |
 | Nothing distinguishes a fork's arms in metrics | — |
-| Logs are the only place branch information appears outside a trace | — |
 
 ## See also
 

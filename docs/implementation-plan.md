@@ -28,7 +28,7 @@ earlier work, that is reported rather than staged as a false RED.
 | **M5** | **Retries & Error Handling** | **#37, #38, #103–#108, #118–#123** | ✅ **Complete (14/14)** |
 | **M6** | **Distributed Execution** | **#39, #143–#150** | ✅ **Complete (9/9)** |
 | **M7** | **Branching, Parallel Execution & Visualisation** | **#40, #161–#167, #171, #172, #181** | ✅ **Complete (11/11)** |
-| M8 | Observability | #41 | Epic only |
+| **M8** | **Observability** | **#41, #185–#190** | ✅ **Complete (7/7)** |
 | M9 | Production Hardening | #42, #43, #67 | Epic only |
 | M10 | Operator Control | #66, #68, #124, #179 | Epic only |
 
@@ -331,6 +331,66 @@ over HTTP, shape rendered, run drawn on it — is done. Authoring was never
 decomposed because its open questions were never settled, and closing the epic
 without a successor would have left four live references pointing at a closed
 issue. Hence #183.
+
+## M8 — Observability ✅
+
+The engine was **almost entirely silent**. The only `ILogger` in the codebase was
+in `DispatcherHostedService` and it said three things about polling, so NFR-2's
+live half — what is happening to an instance right now — had never existed. M6
+and M7 widened the gap rather than closing it.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #41 | Observability epic | [ADR-0025](adr/0025-observability.md) |
+| #185 | Instance lifecycle logging | `EngineLog`, seven events, instance id as a scope |
+| #186 | Step, retry and rollback logging | Debug for progress, above it for trouble |
+| #187 | Instance outcome counters | `EngineMetrics`; one mapping, five counters |
+| #188 | Instance and step tracing | `EngineTracing`; one trace from request to step |
+| #189 | Scrape endpoint and OTLP export | Hand-rolled exposition; OTLP opt-in |
+| #190 | Documentation and the data boundary | The guide, and the canary that keeps it true |
+
+**Instrumentation is BCL; exporting is the host's.** `FlowDeck.Core` emits
+through `ActivitySource`, `Meter` and `ILogger` and takes no OpenTelemetry
+dependency. It did take its **first package reference in the project's life** —
+`Microsoft.Extensions.Logging.Abstractions` — argued per case against ADR-0010
+rather than assumed.
+
+**Found while building, not by planning:**
+
+- **The Prometheus exporter has never shipped stable.** Every release since 1.5
+  is `-beta.1`. Found while writing the ADR, which changed the decision: the
+  exposition endpoint is hand-rolled, and OTLP — where re-implementing a wire
+  protocol would be reckless — stays a package.
+- **Nothing was exported at all**, and it took standing up a real collector to
+  see it. FlowDeck's instance span is a child of the ASP.NET request activity,
+  the default sampler is `ParentBased`, and the request activity was not recorded
+  because nothing instrumented it — so the workflow span was not recorded either.
+  `AddAspNetCoreInstrumentation` is a correctness requirement here, not a nicety.
+- **`OTEL_EXPORTER_OTLP_ENDPOINT` is a *base* endpoint.** The SDK appends the
+  signal path only for endpoints it read from the environment itself; one set
+  through `OtlpExporterOptions` is taken literally. Every export was POSTing to
+  the collector's root and being 404'd.
+- **A default `ActivityContext` does not force a root span.** `ActivitySource`
+  reads it as "no parent specified" and falls back to `Activity.Current`, so
+  recovered instances silently attached to the dispatcher poll that found them.
+- **The scrape endpoint was resolved lazily**, so its `MeterListener` did not
+  exist until someone first called `/metrics`. The first scrape after a deploy
+  would have under-reported exactly the runs an operator was checking on.
+- **A `MeterListener` is process-wide.** Matching meters by name aggregated a
+  second engine's measurements into this host's series, which reads as an
+  inflated count rather than as a bug.
+
+**The data boundary is tested, not stated.** ADR-0025 forbids workflow data in
+any signal — not a value, not a key, not a count. A scenario plants a canary in
+workflow data, pushes it through every path the engine has including a failing
+run that rolls back, and searches every log entry, span and measurement. Injecting
+a deliberate leak fails it, which is the only thing that makes green mean
+anything.
+
+**Carried forward:** step duration (#198), retry and per-action compensation
+counters (#199) and cluster health (#200) are all deferred with reasons recorded
+rather than left off a list nobody wrote. `/metrics` is unauthenticated like the
+rest of the API (#42).
 
 ## M2 — original sequencing notes
 
