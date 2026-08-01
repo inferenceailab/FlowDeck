@@ -20,6 +20,11 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 // real host replaces this registration with EfCoreWorkflowStore.
 builder.Services.AddSingleton<IWorkflowStore>(_ => new InMemoryWorkflowStore(new WorkflowDataSerializer()));
 
+// One per host, disposed with it. The engine would otherwise fall back to its
+// shared default, which is correct but leaves this host unable to hand the same
+// meter to the scrape endpoint (#189).
+builder.Services.AddSingleton<EngineMetrics>();
+
 builder.Services.AddSingleton(provider => new WorkflowEngine(
     provider.GetRequiredService<WorkflowRegistry>(),
     provider.GetService<TimeProvider>(),
@@ -29,7 +34,8 @@ builder.Services.AddSingleton(provider => new WorkflowEngine(
     // whatever sinks the host configured. The engine works without it - a null
     // logger is silent, not broken (ADR-0025 decision 1) - which is why this is
     // the host's line to write rather than the engine's to require.
-    logger: provider.GetService<ILogger<WorkflowEngine>>()));
+    logger: provider.GetService<ILogger<WorkflowEngine>>(),
+    metrics: provider.GetRequiredService<EngineMetrics>()));
 
 // How this node behaves in a cluster. Validated at startup rather than on first
 // poll, so a lease shorter than its own renewal interval fails the deployment

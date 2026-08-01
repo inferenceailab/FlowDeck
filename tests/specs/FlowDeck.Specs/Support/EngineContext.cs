@@ -83,9 +83,22 @@ public sealed class EngineContext
     /// </remarks>
     public RecordingLogger Logger { get; } = new();
 
+    /// <summary>What the engine counted, for the M8 scenarios.</summary>
+    /// <remarks>
+    /// One per scenario, listening to its own meter instance. Scenarios run in
+    /// parallel across feature classes, so a capture keyed on the meter's
+    /// <i>name</i> would count another scenario's instances.
+    /// </remarks>
+    public MeterCapture Metrics { get; } = new();
+
     /// <summary>Builds an engine over this scenario's declarations and store.</summary>
     public WorkflowEngine Engine(TimeProvider? clock = null) =>
-        new(this.BuildRegistry(), clock, this.Store, logger: new RecordingLogger<WorkflowEngine>(this.Logger));
+        new(
+            this.BuildRegistry(),
+            clock,
+            this.Store,
+            logger: new RecordingLogger<WorkflowEngine>(this.Logger),
+            metrics: this.Metrics.Metrics);
 
     /// <summary>Builds an engine that was given no logger at all.</summary>
     /// <remarks>
@@ -104,7 +117,11 @@ public sealed class EngineContext
     /// persisted, and a reader should be able to see that is what the step did.
     /// </remarks>
     public WorkflowEngine RestartedHost() =>
-        new(this.BuildRegistry(), store: this.Store, logger: new RecordingLogger<WorkflowEngine>(this.Logger));
+        new(
+            this.BuildRegistry(),
+            store: this.Store,
+            logger: new RecordingLogger<WorkflowEngine>(this.Logger),
+            metrics: this.Metrics.Metrics);
 
     /// <summary>Runs an action, keeping any exception for a later Then.</summary>
     public async Task CapturingErrorAsync(Func<Task> action)
