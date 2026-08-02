@@ -637,17 +637,26 @@ Two consequences worth knowing:
 - A step on a branch the instance never took is never compensated. Undoing work
   that never happened would act on the world based on nothing.
 
-### Suspending inside a branch is not supported
+### Suspending inside a branch parks the whole instance
 
-`Outcome.Suspend` from a step inside a branch **fails the instance**, with a
-message saying so. It does not suspend.
+`Outcome.Suspend` from a step inside a branch suspends the instance, the same as
+it does on the top-level sequence — but **not immediately**.
 
-The unsettled question is not *where* a suspended fork would resume from — the
-position has been set-valued since #166 — but what "suspended" should mean while
-sibling branches are still running. Failure has an answer: the siblings run on
-and the join fails. Suspension has none, so the engine refuses rather than
-parking an instance in a state no rule covers. Tracked by #179 — suspend from the
-top-level sequence in the meantime.
+The siblings run to completion first, and the instance settles as `Suspended` at
+the join. That is the same rule a failing branch follows, and for the same
+reason: a branch cannot abandon its siblings mid-step, because abandoning one
+would not stop its side effects, only stop FlowDeck recording them.
+
+So an instance whose branch has parked stays `Running` until the slowest sibling
+finishes. `Suspended` therefore keeps meaning one thing — nothing is executing,
+and something can resume it.
+
+Resuming re-enters **only** the branch that parked. Branches that finished left
+no active node behind, so there is nothing there to resume, and the step that
+opened the fork is not re-run.
+
+If one branch parks and another fails, the instance **fails**. Reporting it as
+suspended would invite you to resume something that has already been rolled back.
 
 ### What a crash does to a fork
 
@@ -842,7 +851,6 @@ caught separately from faults thrown by your step code.
 | Limitation | Tracked by |
 | --- | --- |
 | A retry backoff blocks the calling task | #39 |
-| Suspending inside a branch fails the instance rather than suspending it | #179 |
 | Best-effort branches: any branch failure fails the instance | — |
 | A lapsed lease can cause a duplicate step execution | [above](#a-lapsed-lease-can-cause-a-duplicate-step-execution) |
 | Recovery is not load balancing: a started instance stays on its node | — |

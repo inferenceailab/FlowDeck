@@ -16,13 +16,13 @@ Feature: Branching and parallel execution are documented
   Scenario: The section says what the engine does not do
     Given the branching section of the usage guide
     Then it states that a choice with no matching condition takes no branch
-    And it states that suspending inside a branch is not supported
+    And it states what suspending inside a branch does
     And it states that compensation is ordered by completion, not by declaration
 
   @issue-167
   Scenario: The limitations table names the branch suspension limit
     Given the workflow guide
-    Then the known limitations table names suspending inside a branch
+    Then the known limitations table no longer claims branch suspension fails
 
   @issue-167
   Scenario: The rules table names what a branch declaration rejects

@@ -446,8 +446,15 @@ public sealed class WorkflowEngine
         switch (progress)
         {
             case Progress.Suspended:
-                // The step that suspended already checkpointed. Nothing more
-                // happens until something resumes the instance.
+                // Settled here rather than by the step that suspended, because
+                // inside a fork that step returns while its siblings are still
+                // running. Suspended has to keep meaning one thing - nothing is
+                // executing, and something can resume it - so it is set once
+                // every arm has joined (ADR-0029).
+                instance.Status = InstanceStatus.Suspended;
+
+                await run.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
+
                 this.logger.InstanceSuspended(instance.DefinitionId, instance.CurrentStepName);
                 return;
 
@@ -621,6 +628,10 @@ public sealed class WorkflowEngine
             // forked rather than at the branches it forked into.
             var cursor = opened ?? this.Open(branchPath);
 
+            // Tracked so the finally can tell a sequence that finished from one
+            // that parked. Only the first is "no longer anywhere".
+            var outcome = Progress.Completed;
+
             try
             {
                 for (var index = startIndex; index < steps.Count; index++)
@@ -653,6 +664,7 @@ public sealed class WorkflowEngine
 
                         if (progress != Progress.Completed)
                         {
+                            outcome = progress;
                             return progress;
                         }
                     }
@@ -679,6 +691,7 @@ public sealed class WorkflowEngine
 
                     if (branched != Progress.Completed)
                     {
+                        outcome = branched;
                         return branched;
                     }
 
@@ -696,10 +709,19 @@ public sealed class WorkflowEngine
             }
             finally
             {
-                // Whatever happened, this sequence is no longer anywhere. A
-                // cursor left behind would report a finished branch as still
-                // running for the rest of the instance's life.
-                this.Close(cursor);
+                // A sequence that finished is no longer anywhere, and a cursor
+                // left behind would report a finished branch as still running
+                // for the rest of the instance's life.
+                //
+                // A sequence that *suspended* is the exception: it is still at
+                // the step that parked, and that is precisely the position a
+                // resume has to find. Closing it would leave a suspended fork
+                // with an empty active set - an instance recorded as nowhere,
+                // which recovery reads as "already finished" (ADR-0029).
+                if (outcome != Progress.Suspended)
+                {
+                    this.Close(cursor);
+                }
             }
         }
 
@@ -849,40 +871,16 @@ public sealed class WorkflowEngine
 
                 if (!result.ShouldAdvance)
                 {
-                    if (!topLevel)
-                    {
-                        // What is unsettled is not where the instance is - the
-                        // position has been set-valued since #166 - but what
-                        // Suspended would mean while sibling branches are still
-                        // running. Failure has an answer: siblings run on and
-                        // the join fails. Suspension has none, so this fails
-                        // loudly rather than parking an instance in a state no
-                        // rule covers. Lifted by #179.
-                        var unsupported = new NotSupportedException(
-                            $"Step '{step.Name}' suspended inside branch '{string.Join('/', cursor.BranchPath)}'. "
-                            + "Suspending inside a branch is not supported yet (#179).");
-
-                        this.RecordFailure(step.Name, unsupported);
-
-                        await this.CheckpointAsync(
-                            [
-                                entry with
-                                {
-                                    Status = StepStatus.Failed,
-                                    ErrorType = nameof(NotSupportedException),
-                                    ErrorMessage = unsupported.Message,
-                                },
-                            ],
-                            cancellationToken).ConfigureAwait(false);
-
-                        return Progress.Failed;
-                    }
-
                     // The step asked to be resumed later. Stay positioned on it
                     // so resuming re-enters the same step rather than skipping
-                    // it.
-                    instance.Status = InstanceStatus.Suspended;
-
+                    // it - inside a branch as much as on the top-level
+                    // sequence, since the cursor is what recovery matches on.
+                    //
+                    // The status is deliberately *not* set here. Inside a fork
+                    // the siblings are still running, and an instance reported
+                    // as Suspended while work is in flight would make the status
+                    // mean two things (ADR-0029). RunAsync settles it once every
+                    // arm has joined.
                     await this.CheckpointAsync([entry], cancellationToken).ConfigureAwait(false);
 
                     return Progress.Suspended;

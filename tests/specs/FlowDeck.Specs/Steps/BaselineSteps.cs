@@ -50,6 +50,16 @@ public sealed class BaselineSteps(EngineContext world, ScenarioContext scenario)
     /// </remarks>
     private const double RateFloor = 20;
 
+    /// <summary>
+    /// The most a single step may cost against the in-memory store.
+    /// </summary>
+    /// <remarks>
+    /// Two orders of magnitude above what a developer machine measures and one
+    /// above a busy runner, for the same reason <see cref="RateFloor"/> is
+    /// generous: a guard that fires on machine speed gets deleted.
+    /// </remarks>
+    private const double PerStepCeiling = 5_000;
+
     private void Report(string name, double value, string unit)
     {
         // Written to the scenario output so a CI run records the number even
@@ -182,27 +192,38 @@ public sealed class BaselineSteps(EngineContext world, ScenarioContext scenario)
             this.instancesPerSecond > RateFloor,
             $"{this.instancesPerSecond:F1} instances/s is below the {RateFloor} floor");
 
-    [Then("the per-step cost is reported")]
+    [Then("the per-step cost is reported at both lengths")]
     public void ThenPerStepCostIsReported()
     {
         this.Report("one_step_us", this.oneStepMicroseconds, "us/instance");
         this.Report("ten_step_us_per_step", this.tenStepPerStepMicroseconds, "us/step");
 
         Assert.True(this.oneStepMicroseconds > 0);
+        Assert.True(this.tenStepPerStepMicroseconds > 0);
     }
 
-    [Then("a ten-step instance costs less than ten times a one-step one")]
-    public void ThenPerStepCostAmortises() =>
-
-        // Per *step*, so this compares like with like. A one-step instance pays
-        // for creation as well as its step; a ten-step one spreads that over
-        // ten, so the per-step figure must come out lower. If it does not,
-        // something scales with step count that should not - which is the
-        // regression this scenario is shaped to catch.
+    [Then("neither is anywhere near the ceiling a regression would cross")]
+    public void ThenPerStepCostIsBounded()
+    {
+        // An absolute ceiling, not a relationship between the two.
+        //
+        // This assertion originally read "a ten-step instance costs less than
+        // ten times a one-step one", on the reasoning that instance creation is
+        // paid once and spread across the steps. That is true on a fast machine
+        // - 4us per step against 12us - and false on a contended CI runner,
+        // where it measured 65us against 45us. Per-step cost is not a stable
+        // ratio: every checkpoint rewrites the instance record and history
+        // grows as it goes, so a longer instance pays more per step, and how
+        // much more depends on the machine. Asserting the ratio encoded a model
+        // of the engine that does not hold (see docs/performance.md).
         Assert.True(
-            this.tenStepPerStepMicroseconds < this.oneStepMicroseconds,
-            $"per-step cost did not amortise: {this.tenStepPerStepMicroseconds:F1}us over ten steps "
-            + $"vs {this.oneStepMicroseconds:F1}us for one");
+            this.oneStepMicroseconds < PerStepCeiling,
+            $"a one-step instance cost {this.oneStepMicroseconds:F1}us");
+
+        Assert.True(
+            this.tenStepPerStepMicroseconds < PerStepCeiling,
+            $"a ten-step instance cost {this.tenStepPerStepMicroseconds:F1}us per step");
+    }
 
     [Then("every one is recovered")]
     public void ThenAllAreRecovered() => Assert.Equal(50, this.recovered);
