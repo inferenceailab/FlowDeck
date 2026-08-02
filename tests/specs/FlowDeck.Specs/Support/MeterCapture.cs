@@ -86,6 +86,22 @@ public sealed class MeterCapture : IDisposable
             StringComparison.Ordinal)),
     ];
 
+    /// <summary>
+    /// Measurements of one instrument, by its full name.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Of"/> prefixes <c>flowdeck.instances.</c> because the
+    /// lifecycle counters were the only ones when it was written. Anything
+    /// outside that family - step and compensation counters, durations, gauges
+    /// - names itself in full here rather than being squeezed through a prefix
+    /// that no longer describes it.
+    /// </remarks>
+    public IReadOnlyList<Measurement> Instrument(string name) =>
+    [
+        .. this.All.Where(measurement =>
+            string.Equals(measurement.Instrument, name, StringComparison.Ordinal)),
+    ];
+
     /// <summary>What one counter totals.</summary>
     public long Total(string outcome) => this.Of(outcome).Sum(measurement => measurement.Value);
 

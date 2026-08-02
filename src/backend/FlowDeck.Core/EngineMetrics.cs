@@ -42,6 +42,8 @@ public sealed class EngineMetrics : IDisposable
     private readonly Counter<long> failed;
     private readonly Counter<long> cancelled;
     private readonly Counter<long> compensated;
+    private readonly Counter<long> retries;
+    private readonly Counter<long> compensations;
 
     public EngineMetrics()
     {
@@ -71,6 +73,58 @@ public sealed class EngineMetrics : IDisposable
             "flowdeck.instances.compensated",
             unit: "{instance}",
             description: "Instances that failed and rolled back, tagged with how the rollback ended.");
+
+        this.retries = this.meter.CreateCounter<long>(
+            "flowdeck.steps.retried",
+            unit: "{attempt}",
+            description: "Step attempts beyond the first.");
+
+        this.compensations = this.meter.CreateCounter<long>(
+            "flowdeck.compensations",
+            unit: "{action}",
+            description: "Compensating actions run, tagged with whether each undid its step.");
+    }
+
+    /// <summary>
+    /// Counts a retry that is about to be attempted.
+    /// </summary>
+    /// <remarks>
+    /// Attempts <b>beyond the first</b>, so an ordinary run contributes nothing
+    /// and the counter reads as "how much trouble is this having" rather than
+    /// "how much work is it doing". A step that never fails would otherwise be
+    /// indistinguishable from one retried on every execution.
+    ///
+    /// <para>
+    /// Tagged by step name, which is where the answer is: "something is
+    /// retrying" is a fact an operator already has from the failure rate, and
+    /// <i>which step</i> is the part they cannot get anywhere else without
+    /// reading history per instance.
+    /// </para>
+    /// </remarks>
+    public void StepRetried(WorkflowInstance instance, string stepName)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+
+        this.retries.Add(1, [.. Tags(instance), new("step.name", stepName)]);
+    }
+
+    /// <summary>
+    /// Counts one compensating action, whether or not it undid its step.
+    /// </summary>
+    /// <remarks>
+    /// Per action, where <c>flowdeck.instances.compensated</c> is per instance.
+    /// The instance counter says a rollback happened and how it ended; this says
+    /// how much of it succeeded, which for a partial rollback - the outcome that
+    /// always needs a human (ADR-0021) - is the difference between "one undo
+    /// failed" and "nine did".
+    /// </remarks>
+    public void Compensated(WorkflowInstance instance, string stepName, bool undone)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+
+        this.compensations.Add(
+            1,
+            [.. Tags(instance), new("step.name", stepName), new("outcome", undone ? "undone" : "failed")]);
     }
 
     /// <summary>
