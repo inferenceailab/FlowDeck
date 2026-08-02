@@ -31,6 +31,10 @@ export const anInstance = (overrides: Partial<Instance> = {}): Instance => ({
   ownerNodeId: null,
   leaseExpiresAt: null,
 
+  // Null unless a scenario is about a retry. An ordinary instance was not
+  // started to repeat another one.
+  retriedFromInstanceId: null,
+
   // Computed server-side, so a scenario sets it rather than deriving it from a
   // timestamp the browser would compare against its own clock.
   awaitingRecovery: false,

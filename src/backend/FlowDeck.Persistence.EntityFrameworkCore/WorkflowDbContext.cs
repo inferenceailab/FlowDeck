@@ -52,6 +52,8 @@ public sealed class StoredInstance
     public string? InputJson { get; set; }
 
     /// <summary>The node currently running this instance (#143).</summary>
+    public Guid? RetriedFromInstanceId { get; set; }
+
     public string? OwnerNodeId { get; set; }
 
     /// <summary>When that node's claim lapses if not renewed.</summary>

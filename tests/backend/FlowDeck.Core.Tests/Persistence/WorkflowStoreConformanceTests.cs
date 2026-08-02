@@ -596,6 +596,39 @@ public abstract class WorkflowStoreConformanceTests
     /// this version", which is what an operator reads before deleting it
     /// (ADR-0026).
     /// </summary>
+    /// <summary>
+    /// The sixth field to reach this suite. A provider that dropped it would
+    /// break the only link between a failed instance and what was done about
+    /// it (ADR-0028 decision 2), and nothing else would notice.
+    /// </summary>
+    [SkippableFact]
+    public async Task The_retry_link_round_trips()
+    {
+        var store = await this.CreateStoreAsync();
+        var original = Guid.NewGuid();
+
+        var retry = NewRecord() with { RetriedFromInstanceId = original };
+
+        await store.CreateAsync(retry);
+
+        var found = await store.FindAsync(retry.Id);
+
+        Assert.Equal(original, found!.RetriedFromInstanceId);
+    }
+
+    [SkippableFact]
+    public async Task An_instance_that_is_not_a_retry_has_no_link()
+    {
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+
+        await store.CreateAsync(record);
+
+        // Null, not Guid.Empty. A provider mapping the absence to an empty guid
+        // would make every ordinary instance look like a retry of something.
+        Assert.Null((await store.FindAsync(record.Id))!.RetriedFromInstanceId);
+    }
+
     [SkippableFact]
     public async Task Listing_filters_by_definition_version()
     {

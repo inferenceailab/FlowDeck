@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instances/{instanceId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Starts a new instance repeating a finished one from the beginning. */
+        post: operations["RetryWorkflowInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instances/{instanceId}/cancel-and-roll-back": {
         parameters: {
             query?: never;
@@ -190,6 +207,8 @@ export interface components {
             ownerNodeId: null | string;
             /** Format: date-time */
             leaseExpiresAt: null | string;
+            /** Format: uuid */
+            retriedFromInstanceId: null | string;
             awaitingRecovery?: boolean;
         };
         /** @enum {unknown} */
@@ -370,6 +389,28 @@ export interface operations {
         };
     };
     CancelWorkflowInstance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceResponse"];
+                };
+            };
+        };
+    };
+    RetryWorkflowInstance: {
         parameters: {
             query?: never;
             header?: never;

@@ -208,6 +208,24 @@ public sealed record WorkflowInstanceRecord
     /// its predecessor's claims — that work was abandoned when the process
     /// died, and adopting the leases would skip the recovery they exist for.
     /// </remarks>
+    /// <summary>
+    /// The instance this one was started to retry, or null if it was not.
+    /// </summary>
+    /// <remarks>
+    /// Retry creates a new instance and leaves the original exactly as it was
+    /// (ADR-0028 decision 2), which keeps ADR-0008 intact at the cost of the
+    /// instance id changing. This is what makes that cost bearable: an operator
+    /// following an alert to a failed instance can find what was done about it,
+    /// and one looking at a retry can find what it came from.
+    ///
+    /// <para>
+    /// A single hop, not a chain field. Retrying a retry points at the retry, so
+    /// the chain is walked one link at a time rather than stored flattened -
+    /// which would need rewriting every ancestor each time.
+    /// </para>
+    /// </remarks>
+    public Guid? RetriedFromInstanceId { get; init; }
+
     public string? OwnerNodeId { get; init; }
 
     /// <summary>

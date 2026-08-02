@@ -325,6 +325,81 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
+    /// Starts a new instance repeating a finished one from the beginning.
+    /// </summary>
+    /// <returns>The new instance.</returns>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">
+    /// The instance has not finished.
+    /// </exception>
+    /// <remarks>
+    /// A <b>new</b> instance. The original stays exactly as it was, with its
+    /// status and history intact, because ADR-0008 makes terminal states final:
+    /// "this instance failed" is a fact, and an action that made it
+    /// retroactively untrue would rewrite the record an operator is using to
+    /// decide what to do (ADR-0028 decision 2).
+    ///
+    /// <para>
+    /// The cost is that the instance id changes, which is why the new instance
+    /// records <see cref="WorkflowInstance.RetriedFromInstanceId"/>. A chain
+    /// that cannot be walked makes the id change pure lost context.
+    /// </para>
+    ///
+    /// <para>
+    /// The <b>version comes from the original</b>, not from the registry's
+    /// latest. Retrying is repeating what ran; silently upgrading it to a newer
+    /// definition would be a different workflow wearing the same button.
+    /// </para>
+    ///
+    /// <para>
+    /// Only a terminal instance can be retried. Retrying one that is still
+    /// running would start a duplicate of work already in progress.
+    /// </para>
+    /// </remarks>
+    public async Task<WorkflowInstance> RetryAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var original = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        if (!WorkflowInstance.FromRecord(original).IsTerminal)
+        {
+            throw new InvalidStateTransitionException(instanceId, original.Status, InstanceStatus.Running);
+        }
+
+        var definition = this.registry.Get(original.DefinitionId, original.DefinitionVersion);
+        var steps = Compile(definition);
+
+        var instance = new WorkflowInstance(
+            Guid.NewGuid(), definition.Id, definition.Version, this.timeProvider.GetUtcNow())
+        {
+            RetriedFromInstanceId = instanceId,
+        };
+
+        var data = new WorkflowData();
+
+        await this.store
+            .CreateAsync(instance.ToRecord(data, original.Input), cancellationToken)
+            .ConfigureAwait(false);
+
+        instance.Revision = 1;
+
+        using var scope = this.Scope(instance);
+        using var activity = this.tracing.StartInstance(instance, root: false);
+
+        this.logger.InstanceStarted(instance.DefinitionId, instance.DefinitionVersion);
+        this.metrics.InstanceStarted(instance);
+
+        await this.RunAsync(instance, steps, data, original.Input, resumeFrom: [], cancellationToken)
+            .ConfigureAwait(false);
+
+        MarkOutcome(activity, instance);
+
+        return instance;
+    }
+
+    /// <summary>
     /// Stops an instance and unwinds the work it had completed.
     /// </summary>
     /// <exception cref="InstanceNotFoundException">No such instance.</exception>

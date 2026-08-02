@@ -32,6 +32,7 @@ describe('InstanceList', () => {
 ownerNodeId: null,
 leaseExpiresAt: null,
 awaitingRecovery: false,
+    retriedFromInstanceId: null,
       ...item,
     })),
     total: items.length,
