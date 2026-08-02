@@ -58,6 +58,17 @@ export class InstanceService {
   }
 
   /** Stops an instance permanently. */
+  /**
+   * Continues a suspended instance.
+   *
+   * A 409 comes back if it is no longer suspended — because it finished, or
+   * because another operator got there first. The view surfaces that rather
+   * than retrying: two resumes running one instance is what NFR-1 forbids.
+   */
+  resume(instanceId: string): Observable<Instance> {
+    return this.http.post<Instance>(`/api/instances/${instanceId}/resume`, null);
+  }
+
   cancel(instanceId: string): Observable<Instance> {
     return this.http.post<Instance>(`/api/instances/${instanceId}/cancel`, null);
   }

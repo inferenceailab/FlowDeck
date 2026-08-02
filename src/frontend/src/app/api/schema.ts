@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instances/{instanceId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continues a suspended workflow instance. */
+        post: operations["ResumeWorkflowInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instances/{instanceId}/history": {
         parameters: {
             query?: never;
@@ -336,6 +353,28 @@ export interface operations {
         };
     };
     CancelWorkflowInstance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceResponse"];
+                };
+            };
+        };
+    };
+    ResumeWorkflowInstance: {
         parameters: {
             query?: never;
             header?: never;

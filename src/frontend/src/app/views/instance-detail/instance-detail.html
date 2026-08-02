@@ -31,6 +31,21 @@
             it; one that is present and disabled says the action exists and
             does not apply here.
           -->
+          <!--
+            No confirmation gate, unlike cancel. Resuming is what the workflow
+            was waiting for and it is not irreversible - a misclick continues
+            something that was going to continue anyway.
+          -->
+          <button
+            type="button"
+            class="resume-button"
+            [disabled]="!canResume() || resuming()"
+            (click)="resume()"
+            i18n
+          >
+            {{ resuming() ? 'Resuming…' : 'Resume' }}
+          </button>
+
           <button
             type="button"
             class="cancel-button"
@@ -66,6 +81,17 @@
               Keep running
             </button>
           </div>
+        </div>
+      }
+
+      @if (resumeError()) {
+        <!--
+          Beside the instance, not instead of it. The usual cause is a 409:
+          somebody else resumed it, or it finished while this page was open.
+        -->
+        <div class="state-error resume-error" role="alert">
+          <p><strong i18n>Could not resume this instance.</strong></p>
+          <p class="state-detail">{{ resumeError() }}</p>
         </div>
       }
 
