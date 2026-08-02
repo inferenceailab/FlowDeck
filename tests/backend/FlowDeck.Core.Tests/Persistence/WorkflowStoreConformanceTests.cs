@@ -29,6 +29,22 @@ public abstract class WorkflowStoreConformanceTests
     /// <summary>Creates an empty store. Called once per test.</summary>
     protected abstract Task<IWorkflowStore> CreateStoreAsync();
 
+    /// <summary>
+    /// Why this harness cannot run several writers at once, or null.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately narrow: it silences <b>one</b> case, and only for a harness
+    /// whose own plumbing cannot host the scenario. A blanket
+    /// "skip what fails here" would let a provider opt out of the contract it
+    /// exists to prove, which is the opposite of what this suite is for.
+    ///
+    /// <para>
+    /// It reports <b>skipped</b> with the reason attached, never a green tick
+    /// for something that did not run.
+    /// </para>
+    /// </remarks>
+    protected virtual string? ConcurrentWritersUnsupported => null;
+
     private static WorkflowInstanceRecord NewRecord(
         Guid? id = null,
         InstanceStatus status = InstanceStatus.Running,
@@ -133,6 +149,74 @@ public abstract class WorkflowStoreConformanceTests
             async () => await store.SaveAsync(second! with { CurrentStepName = "C" }, []));
 
         Assert.Equal(record.Id, ex.InstanceId);
+    }
+
+    /// <summary>
+    /// The same rule as the case above, but with the writers genuinely racing.
+    /// </summary>
+    /// <remarks>
+    /// The sequential version proves the revision is compared. It does not
+    /// prove the comparison holds when several writers are inside the store at
+    /// once, which is the thing #78 named as unverified: SQLite serialises
+    /// coarsely and a real database does not, so a provider could pass the
+    /// sequential case and still let two writers both believe they won.
+    ///
+    /// <para>
+    /// Every writer loads the same revision and then waits on one gate, so they
+    /// arrive together rather than in whatever order the scheduler produced.
+    /// Starting them without the gate would let the first finish before the
+    /// last began, which is the sequential case again with extra steps.
+    /// </para>
+    /// </remarks>
+    [SkippableFact]
+    public async Task Only_one_of_several_concurrent_writers_wins()
+    {
+        Skip.If(
+            this.ConcurrentWritersUnsupported is not null,
+            $"Concurrent writers cannot be hosted here: {this.ConcurrentWritersUnsupported}");
+
+        var store = await this.CreateStoreAsync();
+        var record = NewRecord();
+        await store.CreateAsync(record);
+
+        var loaded = (await store.FindAsync(record.Id))!;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var writers = Enumerable.Range(0, 8).Select(async index =>
+        {
+            await gate.Task;
+
+            try
+            {
+                await store.SaveAsync(loaded with { CurrentStepName = $"writer-{index}" }, []);
+                return true;
+            }
+            catch (WorkflowStoreConcurrencyException)
+            {
+                return false;
+            }
+        }).ToArray();
+
+        gate.SetResult();
+
+        var won = await Task.WhenAll(writers);
+
+        // Exactly one. Zero would mean the store refused every writer and the
+        // instance can never progress; more than one would mean two engines
+        // could each run a step believing they held the instance, which is what
+        // NFR-1 forbids.
+        Assert.Equal(1, won.Count(result => result));
+
+        // And the survivor is what is stored - not a blend of several writes.
+        var stored = await store.FindAsync(record.Id);
+
+        Assert.StartsWith("writer-", stored!.CurrentStepName!, StringComparison.Ordinal);
+
+        // Advanced by exactly one from what every writer loaded. Two winners
+        // would show up here as well as in the count above, and this is the
+        // assertion that would catch a store which let a later write through
+        // by silently taking whatever revision it was handed.
+        Assert.Equal(loaded.Revision + 1, stored.Revision);
     }
 
     [SkippableFact]

@@ -25,6 +25,27 @@ public sealed class EfCoreWorkflowStoreTests : WorkflowStoreConformanceTests, IA
 {
     private readonly List<DbConnection> connections = [];
 
+    /// <summary>
+    /// The harness shares one connection, and Sqlite cannot take two at once.
+    /// </summary>
+    /// <remarks>
+    /// A SQLite in-memory database lives only as long as a connection to it is
+    /// open, so every context here is handed the <i>same</i>
+    /// <see cref="SqliteConnection"/>. Microsoft.Data.Sqlite does not support
+    /// concurrent commands on one connection and fails with
+    /// <c>SQLite Error 5: unable to delete/modify user-function due to active
+    /// statements</c>.
+    ///
+    /// <para>
+    /// That is this test harness's limitation, not FlowDeck's: the same case
+    /// passes against PostgreSQL and against the in-memory store. It is the
+    /// divergence #78 was filed about, found by running the suite against the
+    /// real target rather than reasoned about.
+    /// </para>
+    /// </remarks>
+    protected override string? ConcurrentWritersUnsupported =>
+        "the SQLite in-memory harness shares one connection across every context";
+
     protected override async Task<IWorkflowStore> CreateStoreAsync()
     {
         // A SQLite in-memory database lives only as long as a connection to it

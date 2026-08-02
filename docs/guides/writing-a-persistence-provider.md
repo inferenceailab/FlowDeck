@@ -178,6 +178,56 @@ once rather than looking held by a node that never existed.
 ticks — see the conversion note above. The index is what the dispatcher polls on
 (#147); without it every node scans the table on every tick.
 
+## Running the suite against a real database
+
+The suite runs against the in-memory store and SQLite by default, which needs no
+database and is why `dotnet test` is fast. **SQLite is not the deployment
+target**, and the two do not behave identically — #17 lost eleven tests to
+SQLite refusing to `ORDER BY` a `DateTimeOffset`.
+
+Two subclasses run the same suite against a real database, skipped unless a
+connection string is present:
+
+```bash
+# PostgreSQL — the homelab target
+FLOWDECK_POSTGRES="Host=localhost;Database=flowdeck_test;Username=postgres;Password=..." dotnet test
+
+# SQL Server
+FLOWDECK_SQLSERVER="Server=localhost;Database=flowdeck_test;Trusted_Connection=True;TrustServerCertificate=True" dotnet test
+```
+
+Absent, they report **skipped** — never a green tick for something that did not
+run.
+
+**CI runs the PostgreSQL pass on every push**, through a runner service
+container rather than a Testcontainers package. GitHub hosts the database
+declaratively, so verifying the real target costs no dependency and leaves
+[ADR-0010](../adr/0010-minimise-third-party-dependencies.md) alone.
+
+### What running it against PostgreSQL found
+
+Every conformance case passes. The provider depends only on
+`EntityFrameworkCore.Relational`, and that design claim now has a tested one
+behind it rather than only an argument.
+
+The one divergence is in the **test harness**, not in FlowDeck:
+
+| | In-memory | SQLite | PostgreSQL |
+| --- | --- | --- | --- |
+| Whole suite | ✅ | ✅ | ✅ |
+| Several writers racing one instance | ✅ | **skipped** | ✅ |
+
+A SQLite in-memory database lives only while a connection to it is open, so the
+harness hands every `DbContext` the *same* connection — and Microsoft.Data.Sqlite
+cannot run concurrent commands on one. It fails with
+`SQLite Error 5: unable to delete/modify user-function due to active statements`
+before reaching anything FlowDeck does.
+
+So that case declares itself unsupported for that harness, with the reason
+attached, and runs everywhere else. The opt-out is deliberately narrow — one
+named case, not "skip what fails here" — because a provider that could opt out of
+the contract would defeat the suite it is proving itself against.
+
 ## Checklist
 
 - [ ] Subclass `WorkflowStoreConformanceTests`; all tests pass
