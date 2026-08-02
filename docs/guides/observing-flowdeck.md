@@ -43,6 +43,8 @@ it.
 | `flowdeck_steps_retried_total` | counter | `definition_id`, `definition_version`, `step_name` |
 | `flowdeck_compensations_total` | counter | `definition_id`, `definition_version`, `step_name`, `outcome` |
 | `flowdeck_steps_duration_seconds` | histogram | `definition_id`, `definition_version`, `step_name`, `outcome` |
+| `flowdeck_instances_executing` | gauge | *(none)* |
+| `flowdeck_instances_recovered_total` | counter | `node_id` |
 
 `flowdeck_steps_duration_seconds` records **one observation per execution**, so a
 step retried three times contributes three — averaging them into one would hide
@@ -82,12 +84,38 @@ how it is used.
 
 `/metrics` is unauthenticated, like the rest of the API (#42).
 
+### Cluster health is per node, not per cluster
+
+`flowdeck_instances_executing` is what **this node** is running right now, and
+`flowdeck_instances_recovered_total` is what this node picked up after another
+node stopped. Sum them across nodes to get the cluster.
+
+That is a decision, not a limitation. A node could query the store for a
+cluster-wide figure, and it would put database load on every scrape from every
+node and report the same number N times — which is exactly wrong, because
+summing across nodes is what a query language does by default. Each process
+exports its own state and the query aggregates; that is the Prometheus model
+rather than a compromise with it.
+
+**Leases held is not a separate metric.** A claim is held only while the run is
+in flight, so it would be `flowdeck_instances_executing` under a second name —
+and two names for one quantity is how a dashboard comes to disagree with itself.
+
+**`flowdeck_instances_recovered_total` is the one to alert on.** A node quietly
+recovering work every few minutes means another node is dying repeatedly, and
+nothing else surfaces that: the recovery *is* the system working, so there is no
+failure anywhere for anyone to notice.
+
 ### What is deliberately not measured
 
-- **Cluster health** (#200) — instances running, leases held, recoveries
-  performed. M6's machinery is inferred from the dashboard rather than measured.
+Everything ADR-0025 deferred has since been built — step duration (#198), retry
+and compensation counts (#199) and cluster health (#200). Nothing on that list
+remains.
 
-These are scope, not oversight, and each is tracked.
+What is still absent is narrower and follows from decisions elsewhere: nothing
+distinguishes a fork's arms, because parallel branches share their instance's
+tags; and no metric carries an instance id, because that is unbounded
+cardinality and belongs on a log and a span, where it already is.
 
 ## Traces
 
@@ -173,8 +201,8 @@ apart; it is not something a log reader should have to parse.
 | Limitation | Tracked by |
 | --- | --- |
 | `/metrics` is unauthenticated | #42 |
-| No cluster health metrics | #200 |
 | Nothing distinguishes a fork's arms in metrics | — |
+| Cluster metrics are per node and must be summed | — |
 
 ## See also
 

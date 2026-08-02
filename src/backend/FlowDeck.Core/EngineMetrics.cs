@@ -45,6 +45,10 @@ public sealed class EngineMetrics : IDisposable
     private readonly Histogram<double> stepDuration;
     private readonly Counter<long> retries;
     private readonly Counter<long> compensations;
+    private readonly Counter<long> recoveries;
+
+    /// <summary>Runs this node has in flight right now.</summary>
+    private int executing;
 
     public EngineMetrics()
     {
@@ -92,11 +96,69 @@ public sealed class EngineMetrics : IDisposable
             unit: "{attempt}",
             description: "Step attempts beyond the first.");
 
+        this.recoveries = this.meter.CreateCounter<long>(
+            "flowdeck.instances.recovered",
+            unit: "{instance}",
+            description: "Instances this node picked up after another node abandoned them.");
+
+        // An observable gauge, read at collection rather than pushed. A gauge
+        // that were pushed would report whatever the value was when something
+        // last changed it, which for an idle node is a number from hours ago.
+        this.meter.CreateObservableGauge(
+            "flowdeck.instances.executing",
+            // Cast so the instrument is ObservableGauge<long>, matching every
+            // other instrument here. An int gauge is a *different* generic
+            // type, and a listener subscribing to long and double sees nothing
+            // from it at all - silently, because there is no error in emitting
+            // to a shape nobody reads.
+            () => (long)Volatile.Read(ref this.executing),
+            unit: "{instance}",
+            description: "Instances this node is running right now.");
+
         this.compensations = this.meter.CreateCounter<long>(
             "flowdeck.compensations",
             unit: "{action}",
             description: "Compensating actions run, tagged with whether each undid its step.");
     }
+
+    /// <summary>
+    /// Records that this node has begun running an instance.
+    /// </summary>
+    /// <remarks>
+    /// <b>Per node, not per cluster</b>, which is the question #200 raised. A
+    /// node could query the store for a cluster-wide figure, and that would put
+    /// database load on every scrape from every node and report the same number
+    /// N times - which is exactly wrong, because summing across nodes is what a
+    /// query language does by default.
+    ///
+    /// <para>
+    /// So each node exports its own, and an operator sums them. That is the
+    /// Prometheus model rather than a compromise with it.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Leases held is not a separate metric.</b> A claim in this engine is
+    /// held only while the run is in flight, so it would be the same number
+    /// under a second name - and two names for one quantity is how a dashboard
+    /// comes to disagree with itself.
+    /// </para>
+    /// </remarks>
+    public void ExecutionStarted() => Interlocked.Increment(ref this.executing);
+
+    /// <summary>Records that a run has finished, however it ended.</summary>
+    public void ExecutionFinished() => Interlocked.Decrement(ref this.executing);
+
+    /// <summary>
+    /// Counts an instance this node recovered from a node that stopped.
+    /// </summary>
+    /// <remarks>
+    /// The one an operator should alert on. A node quietly recovering work
+    /// every few minutes means another node is dying repeatedly, and nothing
+    /// surfaces that today - the recovery itself is the system working, so
+    /// there is no failure anywhere for anyone to notice.
+    /// </remarks>
+    public void InstanceRecovered(string nodeId) =>
+        this.recoveries.Add(1, new KeyValuePair<string, object?>("node.id", nodeId));
 
     /// <summary>
     /// The bucket edges for <c>flowdeck.steps.duration</c>, in seconds.
