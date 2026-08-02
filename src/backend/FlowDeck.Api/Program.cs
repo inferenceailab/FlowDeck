@@ -58,7 +58,8 @@ builder.Services.AddSingleton(provider => new WorkflowDispatcher(
     provider.GetRequiredService<WorkflowEngine>(),
     provider.GetRequiredService<IWorkflowStore>(),
     provider.GetRequiredService<ClusterOptions>(),
-    provider.GetService<TimeProvider>()));
+    provider.GetService<TimeProvider>(),
+    provider.GetRequiredService<EngineMetrics>()));
 
 // Every node runs one, and they are all the same - no leader and no election
 // (ADR-0023). This recovers work whose node died; it does not spread load.

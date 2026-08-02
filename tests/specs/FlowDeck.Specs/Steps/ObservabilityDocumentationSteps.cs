@@ -163,10 +163,12 @@ public sealed partial class ObservabilityDocumentationSteps(EngineContext world)
     {
         Assert.Contains("deliberately not measured", this.guide, StringComparison.OrdinalIgnoreCase);
 
-        // Step duration and retry counts were on this list and have since been
-        // built (#198, #199), so asserting them here would now assert the
-        // opposite of the truth. Cluster health is what remains.
-        Assert.Contains("Cluster health", this.guide, StringComparison.OrdinalIgnoreCase);
+        // Everything ADR-0025 deferred has since been built (#198, #199, #200),
+        // so this no longer names any of them - asserting otherwise would now
+        // assert the opposite of the truth. What the section must still do is
+        // say what remains absent, and why.
+        Assert.Contains("Nothing on that list remains", this.guide, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unbounded cardinality", this.guide, StringComparison.OrdinalIgnoreCase);
     }
 
     [Then("the secret appears in no log entry")]

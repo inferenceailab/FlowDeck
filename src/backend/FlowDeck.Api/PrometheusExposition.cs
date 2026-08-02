@@ -41,6 +41,9 @@ public sealed class PrometheusExposition : IDisposable
     /// <summary>Bucketed observations, by instrument then by label set.</summary>
     private readonly Dictionary<string, Distribution> distributions = new(StringComparer.Ordinal);
 
+    /// <summary>Latest gauge readings, by instrument then by label set.</summary>
+    private readonly Dictionary<string, Series> gauges = new(StringComparer.Ordinal);
+
     public PrometheusExposition(EngineMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(metrics);
@@ -71,6 +74,10 @@ public sealed class PrometheusExposition : IDisposable
                         this.distributions[instrument.Name] =
                             new Distribution(instrument.Description ?? string.Empty);
                     }
+                    else if (instrument.IsObservable)
+                    {
+                        this.gauges[instrument.Name] = new Series(instrument.Description ?? string.Empty);
+                    }
                     else
                     {
                         this.series[instrument.Name] = new Series(instrument.Description ?? string.Empty);
@@ -87,6 +94,15 @@ public sealed class PrometheusExposition : IDisposable
 
             lock (this.gate)
             {
+                if (this.gauges.TryGetValue(instrument.Name, out var gauge))
+                {
+                    // Replaced, not accumulated. A gauge reports what is true
+                    // now; adding successive readings would turn "three
+                    // instances running" into a running total of every scrape.
+                    gauge.Totals[labels] = value;
+                    return;
+                }
+
                 if (!this.series.TryGetValue(instrument.Name, out var found))
                 {
                     return;
@@ -126,6 +142,12 @@ public sealed class PrometheusExposition : IDisposable
     /// <summary>Renders everything recorded so far.</summary>
     public string Render()
     {
+        // Observable instruments are read here rather than pushed, so a gauge
+        // reports the value at scrape time. Without this the endpoint would
+        // serve whatever was last observed - for an idle node, a number from
+        // whenever it last happened to be collected.
+        this.listener.RecordObservableInstruments();
+
         var builder = new StringBuilder();
 
         lock (this.gate)
@@ -146,6 +168,26 @@ public sealed class PrometheusExposition : IDisposable
                         .Append(labels)
                         .Append(' ')
                         .AppendLine(total.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            foreach (var (instrument, recorded) in this.gauges.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                // No _total suffix: that convention marks a counter, and
+                // labelling a gauge as one tells every dashboard to compute a
+                // rate over something that goes down as well as up.
+                var name = instrument.Replace('.', '_');
+
+                builder.Append("# HELP ").Append(name).Append(' ').AppendLine(recorded.Help);
+                builder.Append("# TYPE ").Append(name).AppendLine(" gauge");
+
+                foreach (var (labels, value) in recorded.Totals.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                {
+                    builder
+                        .Append(name)
+                        .Append(labels)
+                        .Append(' ')
+                        .AppendLine(value.ToString(CultureInfo.InvariantCulture));
                 }
             }
 

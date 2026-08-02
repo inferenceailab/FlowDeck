@@ -73,8 +73,13 @@ That answers throughput and failure rate, which is what #41's intent names.
   histogram rendering decision 4's endpoint had declined to invent.
 - ~~**Retry and compensation counters** (#199)~~ — **added 2026-08-02.** M5 built
   both mechanisms and neither was visible without reading history per instance.
-- **Cluster health gauges** (#200). Instances running, leases held, recoveries
-  performed. M6's machinery is currently inferred from the dashboard.
+- ~~**Cluster health gauges** (#200)~~ — **added 2026-08-02**, per node rather
+  than per cluster. Leases held turned out not to be a separate quantity: a claim
+  is held only while the run is in flight.
+
+All three deferrals have since been built. The list is kept rather than deleted,
+because "considered, deferred, then done" is a more useful record than an
+absence nobody can date.
 
 These are scope, not oversight. They are recorded here so that the absence is a
 decision with a date rather than a thing nobody thought of, and they are filed

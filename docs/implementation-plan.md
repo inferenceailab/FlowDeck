@@ -388,10 +388,10 @@ run that rolls back, and searches every log entry, span and measurement. Injecti
 a deliberate leak fails it, which is the only thing that makes green mean
 anything.
 
-**Carried forward:** step duration (#198), retry and per-action compensation
-counters (#199) and cluster health (#200) are all deferred with reasons recorded
-rather than left off a list nobody wrote. `/metrics` is unauthenticated like the
-rest of the API (#42).
+**Carried forward:** step duration (#198), retry and compensation counts (#199)
+and cluster health (#200) were all deferred with reasons recorded rather than
+left off a list nobody wrote — and all three have since been built, after M10.
+`/metrics` is unauthenticated like the rest of the API (#42).
 
 ## M9 — Production Hardening ✅
 

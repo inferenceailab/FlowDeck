@@ -734,6 +734,32 @@ public sealed class WorkflowEngine
     {
         var run = new Run(this, instance, data, input);
 
+        this.metrics.ExecutionStarted();
+
+        try
+        {
+            await this.DriveAsync(run, instance, steps, data, input, resumeFrom, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // In a finally, so a throwing store or a cancelled run does not
+            // leave the gauge counting an instance nobody is executing. A gauge
+            // that only decrements on the happy path drifts upward for the life
+            // of the process.
+            this.metrics.ExecutionFinished();
+        }
+    }
+
+    private async Task DriveAsync(
+        Run run,
+        WorkflowInstance instance,
+        IReadOnlyList<StepDeclaration> steps,
+        IWorkflowData data,
+        object? input,
+        IReadOnlyList<ActiveNode> resumeFrom,
+        CancellationToken cancellationToken)
+    {
         var progress = await run
             .SequenceAsync(steps, instance.CurrentStepIndex, branchPath: [], resumeFrom, cancellationToken)
             .ConfigureAwait(false);

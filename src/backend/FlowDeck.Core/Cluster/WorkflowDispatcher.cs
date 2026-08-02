@@ -28,9 +28,14 @@ public sealed class WorkflowDispatcher(
     WorkflowEngine engine,
     IWorkflowStore store,
     ClusterOptions options,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    EngineMetrics? metrics = null)
 {
     private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
+
+    // Same default as the engine's: shared, so a host that wires neither still
+    // publishes one meter rather than two of the same name.
+    private readonly EngineMetrics metrics = metrics ?? EngineMetrics.Default;
     private readonly InstanceClaims claims = new(store, options, timeProvider);
 
     /// <summary>How many instances a single poll will take on.</summary>
@@ -189,6 +194,11 @@ public sealed class WorkflowDispatcher(
             await engine.ResumeAsync(claimed.Id, cancellationToken).ConfigureAwait(false);
 
             this.Dispatched++;
+
+            // Counted after the run, so a recovery that threw is not reported
+            // as one that worked. An operator alerting on this wants "work was
+            // rescued", not "work was attempted".
+            this.metrics.InstanceRecovered(options.NodeId);
         }
         catch (FlowDeckException)
         {
