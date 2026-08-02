@@ -69,6 +69,16 @@ export class InstanceService {
     return this.http.post<Instance>(`/api/instances/${instanceId}/resume`, null);
   }
 
+  /**
+   * Stops an instance and unwinds the work it had completed.
+   *
+   * A different action from {@link cancel}, not a variant of it: one keeps the
+   * work, the other undoes it, and both are irreversible.
+   */
+  cancelAndRollBack(instanceId: string): Observable<Instance> {
+    return this.http.post<Instance>(`/api/instances/${instanceId}/cancel-and-roll-back`, null);
+  }
+
   cancel(instanceId: string): Observable<Instance> {
     return this.http.post<Instance>(`/api/instances/${instanceId}/cancel`, null);
   }

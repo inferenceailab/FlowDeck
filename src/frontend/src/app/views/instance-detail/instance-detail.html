@@ -55,6 +55,16 @@
           >
             Cancel instance
           </button>
+
+          <button
+            type="button"
+            class="cancel-button rollback-button"
+            [disabled]="!canCancel() || cancelling()"
+            (click)="confirmCancelAndRollBack()"
+            i18n
+          >
+            Cancel and roll back
+          </button>
         </div>
       </header>
 
@@ -65,13 +75,29 @@
           expensive.
         -->
         <div class="confirm" role="alertdialog" aria-labelledby="confirm-title">
-          <p id="confirm-title">
-            <strong i18n>Cancel this instance?</strong>
-          </p>
-          <p class="confirm-detail" i18n>
-            This cannot be undone. The instance stops where it is and keeps its
-            history.
-          </p>
+          <!--
+            The wording is the whole point of having two buttons. Each says what
+            happens to the work already done, because that is the difference an
+            operator is choosing between.
+          -->
+          @if (rollingBack()) {
+            <p id="confirm-title">
+              <strong i18n>Cancel this instance and roll it back?</strong>
+            </p>
+            <p class="confirm-detail" i18n>
+              This cannot be undone. The instance stops, and every step that
+              completed has its compensating action run — work already done will
+              be reversed.
+            </p>
+          } @else {
+            <p id="confirm-title">
+              <strong i18n>Cancel this instance?</strong>
+            </p>
+            <p class="confirm-detail" i18n>
+              This cannot be undone. The instance stops where it is and keeps its
+              history. Work already done is <strong>not</strong> reversed.
+            </p>
+          }
 
           <div class="confirm-actions">
             <button type="button" (click)="cancel()" [disabled]="cancelling()" i18n>

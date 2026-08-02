@@ -84,6 +84,9 @@ export class InstanceDetail implements OnInit {
   /** Whether the confirmation prompt is showing. */
   protected readonly confirming = signal(false);
 
+  /** Whether the prompt is for the variant that also rolls back. */
+  protected readonly rollingBack = signal(false);
+
   /** Whether a cancel request is in flight. */
   protected readonly cancelling = signal(false);
 
@@ -131,6 +134,20 @@ export class InstanceDetail implements OnInit {
    */
   protected confirmCancel(): void {
     this.cancelError.set(null);
+    this.rollingBack.set(false);
+    this.confirming.set(true);
+  }
+
+  /**
+   * Opens the same gate, for the variant that also undoes the work.
+   *
+   * Two buttons and one prompt, because the prompt's wording is what makes the
+   * difference legible. A single button with a checkbox would put the
+   * destructive half behind something a tired operator scans past.
+   */
+  protected confirmCancelAndRollBack(): void {
+    this.cancelError.set(null);
+    this.rollingBack.set(true);
     this.confirming.set(true);
   }
 
@@ -142,7 +159,11 @@ export class InstanceDetail implements OnInit {
     this.cancelling.set(true);
     this.cancelError.set(null);
 
-    this.instances.cancel(this.instanceId()).subscribe({
+    const request = this.rollingBack()
+      ? this.instances.cancelAndRollBack(this.instanceId())
+      : this.instances.cancel(this.instanceId());
+
+    request.subscribe({
       next: () => {
         this.cancelling.set(false);
         this.confirming.set(false);
