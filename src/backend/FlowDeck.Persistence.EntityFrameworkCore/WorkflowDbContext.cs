@@ -54,6 +54,8 @@ public sealed class StoredInstance
     /// <summary>The node currently running this instance (#143).</summary>
     public Guid? RetriedFromInstanceId { get; set; }
 
+    public bool SuspendRequested { get; set; }
+
     public string? OwnerNodeId { get; set; }
 
     /// <summary>When that node's claim lapses if not renewed.</summary>

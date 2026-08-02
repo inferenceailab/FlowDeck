@@ -183,6 +183,11 @@ public sealed class WorkflowEngine
         var instance = WorkflowInstance.FromRecord(record);
         instance.Status = InstanceStatus.Running;
 
+        // The park request, if any, has been satisfied - the instance parked.
+        // Left set it would survive into this run and stop it at the first step
+        // boundary, so an operator resuming would see nothing happen (#218).
+        instance.SuspendRequested = false;
+
         var data = new WorkflowData(record.Data);
 
         using var scope = this.Scope(instance);
@@ -484,6 +489,60 @@ public sealed class WorkflowEngine
             .ConfigureAwait(false);
 
         MarkOutcome(activity, instance);
+
+        return instance;
+    }
+
+    /// <summary>
+    /// Asks a running instance to park at its next step boundary.
+    /// </summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">
+    /// Already terminal, or already suspended.
+    /// </exception>
+    /// <remarks>
+    /// <b>Not immediate, and it does not pretend to be.</b> The step in flight
+    /// finishes; the instance parks before the next one starts. The engine
+    /// cannot cancel a step mid-execution - step bodies are author code across
+    /// a trust boundary (ADR-0003) - so stopping "now" would either be a lie or
+    /// would abandon a step whose side effects happen anyway
+    /// (ADR-0028 decision 4).
+    ///
+    /// <para>
+    /// An instance that is not currently executing parks immediately, because
+    /// there is no step to wait for. One that is executing - here or on another
+    /// node - finds out at its next checkpoint, through the concurrency token
+    /// this write bumps. That costs no extra read per step.
+    /// </para>
+    /// </remarks>
+    public async Task<WorkflowInstance> SuspendAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        var instance = WorkflowInstance.FromRecord(record);
+
+        if (instance.IsTerminal || instance.Status == InstanceStatus.Suspended)
+        {
+            throw new InvalidStateTransitionException(instanceId, instance.Status, InstanceStatus.Suspended);
+        }
+
+        instance.SuspendRequested = true;
+
+        var saved = await this.store
+            .SaveAsync(
+                instance.ToRecord(new WorkflowData(record.Data), record.Input),
+                [],
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        instance.Revision = saved.Revision;
+
+        using var scope = this.Scope(instance);
+
+        this.logger.InstanceSuspendRequested(instance.DefinitionId, instance.CurrentStepName);
 
         return instance;
     }
@@ -792,6 +851,17 @@ public sealed class WorkflowEngine
         /// </remarks>
         private readonly SemaphoreSlim writer = new(1, 1);
 
+        /// <summary>
+        /// Whether an operator asked this run to park while it was executing.
+        /// </summary>
+        /// <remarks>
+        /// Set by a checkpoint that found the request, read by every sequence at
+        /// its next step boundary. Shared across a fork's arms deliberately: a
+        /// suspend applies to the instance, not to whichever branch happened to
+        /// checkpoint when it arrived.
+        /// </remarks>
+        public bool SuspendRequested { get; private set; }
+
         private readonly Lock cursorGate = new();
         private readonly List<Cursor> cursors = [];
 
@@ -873,6 +943,17 @@ public sealed class WorkflowEngine
                 for (var index = startIndex; index < steps.Count; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+
+                    // Between steps, never inside one. The engine cannot
+                    // interrupt author code across a trust boundary (ADR-0003),
+                    // so "suspend now" would either be a lie or would abandon a
+                    // step whose side effects happen anyway (ADR-0028
+                    // decision 4).
+                    if (this.SuspendRequested)
+                    {
+                        outcome = Progress.Suspended;
+                        return Progress.Suspended;
+                    }
 
                     var step = steps[index];
 
@@ -975,9 +1056,47 @@ public sealed class WorkflowEngine
                 // The record is built inside the gate as well as saved inside
                 // it. Building it outside would snapshot a revision another
                 // branch had already superseded by the time this save ran.
-                var saved = await engine.store
-                    .SaveAsync(instance.ToRecord(data, input, this.Snapshot()), history, cancellationToken)
-                    .ConfigureAwait(false);
+                WorkflowInstanceRecord saved;
+
+                try
+                {
+                    saved = await engine.store
+                        .SaveAsync(instance.ToRecord(data, input, this.Snapshot()), history, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (WorkflowStoreConcurrencyException)
+                {
+                    // Somebody else wrote. The one writer that is expected to is
+                    // an operator asking this instance to park (#218), and the
+                    // revision bump is how a running engine finds out - it needs
+                    // no extra read per step to notice.
+                    var current = await engine.store
+                        .FindAsync(instance.Id, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (current is not { SuspendRequested: true })
+                    {
+                        // Any other writer is the conflict the concurrency token
+                        // exists to report (#19). Swallowing it would let two
+                        // engines run one instance and both believe they had.
+                        throw;
+                    }
+
+                    // Adopt their revision and retry. The request clears
+                    // itself: ToRecord writes this run's own instance, whose
+                    // flag was never set - only the Run's was. A mutation test
+                    // proved an explicit "with { SuspendRequested = false }"
+                    // here was dead code.
+                    instance.Revision = current.Revision;
+                    this.SuspendRequested = true;
+
+                    saved = await engine.store
+                        .SaveAsync(
+                            instance.ToRecord(data, input, this.Snapshot()),
+                            history,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
 
                 instance.Revision = saved.Revision;
             }

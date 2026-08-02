@@ -148,6 +148,9 @@ public sealed class WorkflowInstance
     /// </remarks>
     public Guid? RetriedFromInstanceId { get; internal set; }
 
+    /// <summary>Whether an operator has asked this instance to park.</summary>
+    internal bool SuspendRequested { get; set; }
+
     public string? OwnerNodeId { get; internal set; }
 
     /// <summary>When this node's claim lapses if it is not renewed.</summary>
@@ -228,6 +231,7 @@ public sealed class WorkflowInstance
             Input = input,
             Revision = this.Revision,
             RetriedFromInstanceId = this.RetriedFromInstanceId,
+            SuspendRequested = this.SuspendRequested,
             OwnerNodeId = this.OwnerNodeId,
             LeaseExpiresAt = this.LeaseExpiresAt,
         };
@@ -240,6 +244,7 @@ public sealed class WorkflowInstance
             CurrentStepIndex = record.CurrentStepIndex,
             StepAttempts = record.StepAttempts,
             RetriedFromInstanceId = record.RetriedFromInstanceId,
+            SuspendRequested = record.SuspendRequested,
             OwnerNodeId = record.OwnerNodeId,
             LeaseExpiresAt = record.LeaseExpiresAt,
             CurrentStepName = record.CurrentStepName,

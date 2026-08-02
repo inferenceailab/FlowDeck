@@ -247,6 +247,38 @@
         }
       }
     },
+    "/api/instances/{instanceId}/suspend": {
+      "post": {
+        "tags": [
+          "InstanceEndpoints"
+        ],
+        "summary": "Asks a running instance to park at its next step boundary.",
+        "operationId": "SuspendWorkflowInstance",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instances/{instanceId}/retry": {
       "post": {
         "tags": [

@@ -245,4 +245,24 @@ internal static partial class EngineLog
         string definitionId,
         int version,
         int instancesEverRun);
+
+    /// <summary>
+    /// An operator asked a running instance to park.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="InstanceSuspended"/>, which says it actually
+    /// has. Between the two an instance is still executing the step it was on,
+    /// and an operator reading only the second would think their request had
+    /// been ignored.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 1008,
+        EventName = "InstanceSuspendRequested",
+        Level = LogLevel.Information,
+        Message = "Instance of {DefinitionId} asked to suspend at step {CurrentStepName}; "
+            + "it will park at the next step boundary.")]
+    public static partial void InstanceSuspendRequested(
+        this ILogger logger,
+        string definitionId,
+        string? currentStepName);
 }

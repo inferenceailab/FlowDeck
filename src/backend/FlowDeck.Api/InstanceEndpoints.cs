@@ -180,6 +180,10 @@ public static class InstanceEndpoints
             .WithName("CancelWorkflowInstance")
             .WithSummary("Stops a workflow instance permanently.");
 
+        instances.MapPost("/{instanceId:guid}/suspend", SuspendAsync)
+            .WithName("SuspendWorkflowInstance")
+            .WithSummary("Asks a running instance to park at its next step boundary.");
+
         instances.MapPost("/{instanceId:guid}/retry", RetryAsync)
             .WithName("RetryWorkflowInstance")
             .WithSummary("Starts a new instance repeating a finished one from the beginning.");
@@ -258,6 +262,28 @@ public static class InstanceEndpoints
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Accepted(
+            $"/api/instances/{instance.Id}",
+            InstanceResponse.From(instance, timeProvider));
+    }
+
+    /// <summary>
+    /// Asks a running instance to park.
+    /// </summary>
+    /// <remarks>
+    /// <c>202 Accepted</c> is doing real work here rather than being symmetric
+    /// with the others: the request has been recorded and the instance has
+    /// <i>not</i> stopped yet. It parks after the step in flight finishes, so a
+    /// caller that needs to know it has must re-read it.
+    /// </remarks>
+    private static async Task<Accepted<InstanceResponse>> SuspendAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await engine.SuspendAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",

@@ -226,6 +226,24 @@ public sealed record WorkflowInstanceRecord
     /// </remarks>
     public Guid? RetriedFromInstanceId { get; init; }
 
+    /// <summary>
+    /// Whether an operator has asked this instance to park.
+    /// </summary>
+    /// <remarks>
+    /// A request rather than a state, because the engine cannot interrupt a
+    /// step mid-execution - step bodies are author code across a trust boundary
+    /// (ADR-0003) - so a suspend takes effect at the next step boundary
+    /// (ADR-0028 decision 4).
+    ///
+    /// <para>
+    /// The running engine finds out through the concurrency token it already
+    /// has: setting this bumps the revision, so the engine's next checkpoint
+    /// conflicts, and it re-reads rather than failing. The flag is cleared as it
+    /// is honoured, so a later resume does not park again immediately.
+    /// </para>
+    /// </remarks>
+    public bool SuspendRequested { get; init; }
+
     public string? OwnerNodeId { get; init; }
 
     /// <summary>
