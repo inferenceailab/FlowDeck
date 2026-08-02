@@ -12,6 +12,7 @@
 | [Defining a workflow](guides/defining-a-workflow.md) | How to use the library |
 | [Writing a persistence provider](guides/writing-a-persistence-provider.md) | Implementing `IWorkflowStore` |
 | [Observing FlowDeck](guides/observing-flowdeck.md) | Every log, metric and span it emits — and what it never emits |
+| [Operating FlowDeck](guides/operating-flowdeck.md) | The actions available when a workflow misbehaves, and what each costs |
 | [HTTP API](api.md) | Endpoints, and why they are shaped that way |
 | [API error contract](api-errors.md) | What every error response means |
 | [Deployment](../deploy/README.md) | CI/CD and homelab setup |
@@ -21,7 +22,8 @@
 
 **Using the library** → [Defining a workflow](guides/defining-a-workflow.md).
 
-**Running it** → [Observing FlowDeck](guides/observing-flowdeck.md), then
+**Running it** → [Operating FlowDeck](guides/operating-flowdeck.md) and
+[Observing FlowDeck](guides/observing-flowdeck.md), then
 [Deployment](../deploy/README.md).
 
 **Contributing** → [Architecture](architecture.md), then
