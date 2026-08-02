@@ -1,0 +1,11 @@
+{
+  "//": "The development-server counterpart of nginx.conf. The dashboard fetches relative URLs so the same bundle works everywhere, which means every environment that serves it has to route /api somewhere - a container has nginx.conf, and `ng serve` has this.",
+  "/api": {
+    "target": "http://localhost:5299",
+    "secure": false
+  },
+  "/openapi": {
+    "target": "http://localhost:5299",
+    "secure": false
+  }
+}

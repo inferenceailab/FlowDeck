@@ -3,6 +3,15 @@
   <ItemGroup>
     <ProjectReference Include="..\FlowDeck.Core\FlowDeck.Core.csproj" />
     <ProjectReference Include="..\FlowDeck.Persistence.EntityFrameworkCore\FlowDeck.Persistence.EntityFrameworkCore.csproj" />
+
+    <!--
+      Demo definitions, registered under an environment check in Program.cs. A
+      reference the deployed image carries and does not use - the alternative is
+      a conditional ProjectReference, which builds a different composition root
+      in Development from the one that ships and hides a compile error until
+      release.
+    -->
+    <ProjectReference Include="..\..\..\samples\FlowDeck.Samples\FlowDeck.Samples.csproj" />
   </ItemGroup>
 
   <ItemGroup>

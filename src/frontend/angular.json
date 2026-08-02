@@ -3,7 +3,9 @@
   "version": 1,
   "cli": {
     "packageManager": "npm",
-    "schematicCollections": ["angular-eslint"]
+    "schematicCollections": [
+      "angular-eslint"
+    ]
   },
   "newProjectRoot": "projects",
   "projects": {
@@ -25,8 +27,12 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.css"],
-            "polyfills": ["@angular/localize/init"]
+            "styles": [
+              "src/styles.css"
+            ],
+            "polyfills": [
+              "@angular/localize/init"
+            ]
           },
           "configurations": {
             "production": {
@@ -54,6 +60,10 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "defaultConfiguration": "development",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "flowdeck-dashboard:build:production"
@@ -61,8 +71,7 @@
             "development": {
               "buildTarget": "flowdeck-dashboard:build:development"
             }
-          },
-          "defaultConfiguration": "development"
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"
@@ -70,7 +79,10 @@
         "lint": {
           "builder": "@angular-eslint/builder:lint",
           "options": {
-            "lintFilePatterns": ["src/**/*.ts", "src/**/*.html"]
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
           }
         }
       }

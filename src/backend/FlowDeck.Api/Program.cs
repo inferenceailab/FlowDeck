@@ -2,6 +2,7 @@ using FlowDeck.Api;
 using FlowDeck.Core;
 using FlowDeck.Core.Cluster;
 using FlowDeck.Core.Persistence;
+using FlowDeck.Samples;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry.Exporter;
@@ -196,6 +197,25 @@ app.MapGet("/metrics", (PrometheusExposition exposition) =>
 
 app.MapWorkflowEndpoints();
 app.MapInstanceEndpoints();
+
+// Off unless a developer asked for it, by a flag set only in launchSettings.json
+// - not by the environment alone. A clone of FlowDeck otherwise starts up
+// correct and completely blank, which reads as a broken deployment rather than a
+// clean one; but WebApplicationFactory also hosts in Development, so an
+// environment check would seed business fiction into every API test's fixture
+// and add its retry delays to every one of them.
+//
+// Both conditions, so setting the flag in a deployed environment still does
+// nothing.
+if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("FlowDeck:Samples"))
+{
+    app.Services.GetRequiredService<WorkflowRegistry>().AddSamples();
+
+    // Awaited before the server accepts a request, so the first page load sees
+    // the seeded instances. Backgrounding it would race the browser, and the
+    // race would be won by whoever had the faster machine.
+    await SampleData.SeedAsync(app.Services.GetRequiredService<WorkflowEngine>());
+}
 
 await app.RunAsync();
 
