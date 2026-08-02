@@ -74,6 +74,36 @@ npm run lint
 npm run build
 ```
 
+## Running it locally
+
+Two processes. The API first:
+
+```sh
+dotnet run --project src/backend/FlowDeck.Api
+```
+
+Then the dashboard, in another shell:
+
+```sh
+cd src/frontend
+npm start
+```
+
+The dashboard is on <http://localhost:4200> and proxies `/api` to the API on
+`:5299` (`proxy.conf.json`, the development-server counterpart of the
+container's `nginx.conf`). The API also serves its OpenAPI document at
+`/openapi/v1.json` and a Prometheus scrape at `/metrics`.
+
+The `http` launch profile sets `FlowDeck__Samples`, which registers the
+definitions in `samples/` and seeds a few instances — a straight line, a fork, a
+conditional branch, a retry, a rollback and a suspend, so every badge and every
+operator action has an example. They are business fiction and a deployed
+FlowDeck never registers them: the flag is set in `launchSettings.json` and
+nowhere else, because `WebApplicationFactory` also hosts in Development and an
+environment check alone would seed them into every API test's fixture.
+
+Storage defaults to in-memory, so a restart starts clean.
+
 ## Contributing
 
 Every change goes through a pull request. `main` blocks force-pushes,

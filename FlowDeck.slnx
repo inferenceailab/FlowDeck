@@ -5,6 +5,9 @@
     <Project Path="src/backend/FlowDeck.Core/FlowDeck.Core.csproj" />
     <Project Path="src/backend/FlowDeck.Persistence.EntityFrameworkCore/FlowDeck.Persistence.EntityFrameworkCore.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/FlowDeck.Samples/FlowDeck.Samples.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/backend/">
     <Project Path="tests/backend/FlowDeck.Api.Tests/FlowDeck.Api.Tests.csproj" />
