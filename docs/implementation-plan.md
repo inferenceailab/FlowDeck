@@ -30,7 +30,7 @@ earlier work, that is reported rather than staged as a false RED.
 | **M7** | **Branching, Parallel Execution & Visualisation** | **#40, #161–#167, #171, #172, #181** | ✅ **Complete (11/11)** |
 | **M8** | **Observability** | **#41, #185–#190** | ✅ **Complete (7/7)** |
 | **M9** | **Production Hardening** | **#43, #67, #202–#207** | ✅ **Complete (8/8)** |
-| M10 | Operator Control | #66, #68, #124, #179 | Epic only |
+| **M10** | **Operator Control** | **#66, #68, #124, #179, #216–#220** | ✅ **Complete (9/9)** |
 | M11 | Authentication & Authorisation | #42 | Epic only |
 
 M1–M4 together form one vertical slice: define a workflow in C# → execute it →
@@ -448,6 +448,69 @@ than investigated, and `performance.md` says so.
 **Carried forward:** no migration for in-flight instances (#67 stays open as the
 epic covering it), multi-tenancy out of scope (ADR-0027), and the API still has
 no authentication (#42, now M11).
+
+## M10 — Operator Control ✅
+
+FlowDeck had **one** operator action: cancel. For an engine whose dashboard is
+modelled on Octopus Deploy and Hangfire, that was a gap rather than a scoping
+decision — and `ResumeAsync` was the sharpest symptom, a public signature that
+arrived because #12 needed it to prove a clause and was never designed.
+
+| Issue | Story | Outcome |
+| --- | --- | --- |
+| #66 | Operator actions epic | [ADR-0028](adr/0028-operator-actions.md) |
+| #179 | Suspending inside a branch | [ADR-0029](adr/0029-suspending-inside-a-branch.md); the guard's reason had expired |
+| #68 | Resume over HTTP and in the dashboard | The gap the issue was filed about, closed |
+| #124 | Cancel and roll back | Two actions, not a flag — open since ADR-0021 |
+| #216 | Retry from the start | New linked instance; `RetriedFromInstanceId` |
+| #217 | Retry from the failing step | Reuses the crash-recovery resumption path |
+| #218 | Suspend a running instance | The concurrency token is the signal |
+| #219 | Bulk cancel and retry | Best-effort, per-item report, bounded |
+| #220 | Operator actions documented | Prose asserted, RED confirmed |
+
+**Retry keeps ADR-0008 intact.** Both modes create a new linked instance and
+leave the original exactly as it was. Reopening a terminal instance was on the
+table and was rejected: "this instance failed" is a fact, and an action that made
+it retroactively untrue would rewrite the record an operator is using to decide
+what to do. The cost — the instance id changes — is named in the ADR, carried by
+`RetriedFromInstanceId`, and is the first thing the guide says.
+
+**Not built, deliberately:** editing workflow data on a suspended instance. #66
+calls it the most useful and most dangerous action on its list, and that is the
+right reading.
+
+**Found while building, not by planning:**
+
+- **The branch-suspension guard had been unjustified since #166.** #163 made the
+  position set-valued and #166 taught resume to use it, so the machinery already
+  existed. Only the *meaning* of `Suspended` mid-fork was unsettled.
+- **A parked sequence must not close its cursor.** The first attempt at #179 set
+  the status at the join and checkpointed after the `finally` had closed every
+  cursor, so a suspended instance was recorded as being **nowhere** — which
+  recovery reads as "already finished". Caught by a failing test, not by review.
+- **A mutation showed a clear was dead code.** #218's conflict handler explicitly
+  cleared the suspend request; removing it failed nothing, because the running
+  engine's own instance never carries the flag and every checkpoint writes
+  `false` anyway. What was missing was an *assertion* on the stored record, which
+  a stale flag would otherwise fail silently.
+- **A bulk scenario passed for the wrong reason.** The instance meant to be
+  refused was declared under a different definition id, so the filter never
+  selected it — four succeeded, none failed, green. It now uses a second version
+  of the same definition.
+- **CI caught a wrong assertion from M9.** #206 asserted per-step cost amortises;
+  it does on a fast machine and does not on a contended runner, because every
+  checkpoint rewrites a record whose history keeps growing. The guard now bounds
+  cost absolutely, and `performance.md` records the finding.
+
+**Honest limitation:** there is **no audit trail**. #66 asked whether there is a
+record of who did what, and there cannot be — the API has no authentication, so
+an action has no subject to name. Execution history records *what* happened. This
+matters most for exactly the post-incident review an operator would reach for it
+in, and the guide says so.
+
+**Carried forward:** editing workflow data (unbuilt by decision), bulk actions
+capped at 200 per call, and authentication (#42, now M11 — which multi-tenancy
+and any audit trail both wait on).
 
 ## M2 — original sequencing notes
 
