@@ -50,6 +50,23 @@ No registry secret is needed — GHCR authentication uses the workflow's own
 `cd.yml` never runs on a pull request, so a fork or untrusted branch cannot
 reach the homelab.
 
+## Verifying the database before you trust it
+
+FlowDeck's store contract is a test suite, and it runs against **PostgreSQL** in
+CI on every push. To run it against *your* database — the one the homelab will
+actually use — point the same suite at it:
+
+```bash
+FLOWDECK_POSTGRES="Host=<host>;Database=flowdeck_verify;Username=<user>;Password=<password>"   dotnet test tests/backend/FlowDeck.Core.Tests/FlowDeck.Core.Tests.csproj
+```
+
+**Use a throwaway database.** Each test drops and recreates the schema, so
+pointing this at anything you care about will delete it.
+
+Worth doing once against the real server rather than trusting CI alone: CI proves
+the provider is correct against a stock PostgreSQL, not that your instance is
+configured the way FlowDeck needs (#78).
+
 ## Rollback
 
 The deploy job records the running image tag before changing anything. If the

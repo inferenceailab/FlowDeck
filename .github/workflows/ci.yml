@@ -33,6 +33,32 @@ jobs:
   backend:
     name: Backend (.NET 10)
     runs-on: ubuntu-latest
+
+    # A real PostgreSQL, because the store conformance suite has only ever run
+    # against SQLite and the deployment target is Postgres (#78). The two do not
+    # behave identically - SQLite refused to ORDER BY a DateTimeOffset at all,
+    # found by accident in #17.
+    #
+    # A runner service rather than Testcontainers: GitHub hosts this
+    # declaratively, so verifying the real target costs no package and leaves
+    # ADR-0010 alone. The suite still skips these when the variable is absent,
+    # so `dotnet test` on a laptop needs no database.
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:6f30057d31f5861b66f3545d4821f987aacf1dd920765f0acadea0c58ff975b1
+        env:
+          POSTGRES_PASSWORD: flowdeck
+          POSTGRES_DB: flowdeck_test
+        ports:
+          - 5432:5432
+        # Without this the job races the database's startup and fails on the
+        # first connection rather than on anything FlowDeck did.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,6 +82,11 @@ jobs:
         run: dotnet format FlowDeck.slnx --verify-no-changes --severity warn
 
       - name: Test
+        env:
+          # Turns the skipped Postgres conformance subclass into a running one.
+          # Absent locally, so the default `dotnet test` stays fast and needs
+          # no database (#78).
+          FLOWDECK_POSTGRES: Host=localhost;Database=flowdeck_test;Username=postgres;Password=flowdeck
         run: >-
           dotnet test FlowDeck.slnx --no-build --configuration Release
           --logger trx --results-directory artifacts/test-results
