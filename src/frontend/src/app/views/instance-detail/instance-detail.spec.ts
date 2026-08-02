@@ -32,6 +32,7 @@ describe('InstanceDetail', () => {
     errorMessage: null,
 ownerNodeId: null,
 leaseExpiresAt: null,
+retriedFromInstanceId: null,
 awaitingRecovery: false,
     ...overrides,
   });

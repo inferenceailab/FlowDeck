@@ -137,6 +137,17 @@ public sealed class WorkflowInstance
     /// about ownership — it simply must not destroy it.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The instance this one was started to retry, or null if it was not.
+    /// </summary>
+    /// <remarks>
+    /// Retry leaves the original untouched and starts a new instance
+    /// (ADR-0028 decision 2), so this is the only thing linking the two. An
+    /// operator following an alert to a failed instance uses it to find what
+    /// was done about it.
+    /// </remarks>
+    public Guid? RetriedFromInstanceId { get; internal set; }
+
     public string? OwnerNodeId { get; internal set; }
 
     /// <summary>When this node's claim lapses if it is not renewed.</summary>
@@ -216,6 +227,7 @@ public sealed class WorkflowInstance
             Data = data.Snapshot(),
             Input = input,
             Revision = this.Revision,
+            RetriedFromInstanceId = this.RetriedFromInstanceId,
             OwnerNodeId = this.OwnerNodeId,
             LeaseExpiresAt = this.LeaseExpiresAt,
         };
@@ -227,6 +239,7 @@ public sealed class WorkflowInstance
             Status = record.Status,
             CurrentStepIndex = record.CurrentStepIndex,
             StepAttempts = record.StepAttempts,
+            RetriedFromInstanceId = record.RetriedFromInstanceId,
             OwnerNodeId = record.OwnerNodeId,
             LeaseExpiresAt = record.LeaseExpiresAt,
             CurrentStepName = record.CurrentStepName,

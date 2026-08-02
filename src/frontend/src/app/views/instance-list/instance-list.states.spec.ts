@@ -38,6 +38,7 @@ describe('InstanceList states', () => {
 ownerNodeId: null,
 leaseExpiresAt: null,
 awaitingRecovery: false,
+    retriedFromInstanceId: null,
       },
     ],
   };

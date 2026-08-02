@@ -26,7 +26,8 @@ public sealed record InstanceResponse(
     string? ErrorType,
     string? ErrorMessage,
     string? OwnerNodeId,
-    DateTimeOffset? LeaseExpiresAt)
+    DateTimeOffset? LeaseExpiresAt,
+    Guid? RetriedFromInstanceId)
 {
     /// <summary>
     /// Whether this instance is <c>Running</c> with a lease that has lapsed.
@@ -73,7 +74,8 @@ public sealed record InstanceResponse(
             instance.ErrorType,
             instance.ErrorMessage,
             instance.OwnerNodeId,
-            instance.LeaseExpiresAt)
+            instance.LeaseExpiresAt,
+            instance.RetriedFromInstanceId)
         {
             AwaitingRecovery = instance.Status == InstanceStatus.Running
                 && instance.LeaseExpiresAt is { } expiry
@@ -178,6 +180,10 @@ public static class InstanceEndpoints
             .WithName("CancelWorkflowInstance")
             .WithSummary("Stops a workflow instance permanently.");
 
+        instances.MapPost("/{instanceId:guid}/retry", RetryAsync)
+            .WithName("RetryWorkflowInstance")
+            .WithSummary("Starts a new instance repeating a finished one from the beginning.");
+
         instances.MapPost("/{instanceId:guid}/cancel-and-roll-back", CancelAndCompensateAsync)
             .WithName("CancelAndRollBackWorkflowInstance")
             .WithSummary("Stops a workflow instance and unwinds the work it had completed.");
@@ -248,6 +254,28 @@ public static class InstanceEndpoints
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Accepted(
+            $"/api/instances/{instance.Id}",
+            InstanceResponse.From(instance, timeProvider));
+    }
+
+    /// <summary>
+    /// Retries a finished instance from the beginning.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>202</c> with the <b>new</b> instance, and a <c>Location</c>
+    /// pointing at it rather than at the one that was retried. The id changing
+    /// is the cost of leaving terminal states final (ADR-0028 decision 2), and
+    /// a response that returned the original would hide it.
+    /// </remarks>
+    private static async Task<Accepted<InstanceResponse>> RetryAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await engine.RetryAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",

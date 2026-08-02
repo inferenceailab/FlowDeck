@@ -358,6 +358,7 @@ public sealed class EfCoreWorkflowStore(
         row.ErrorType = record.ErrorType;
         row.ErrorMessage = record.ErrorMessage;
         row.StepAttempts = record.StepAttempts;
+        row.RetriedFromInstanceId = record.RetriedFromInstanceId;
         row.OwnerNodeId = record.OwnerNodeId;
         row.LeaseExpiresAt = record.LeaseExpiresAt;
 
@@ -395,6 +396,7 @@ public sealed class EfCoreWorkflowStore(
         ErrorType = row.ErrorType,
         ErrorMessage = row.ErrorMessage,
         StepAttempts = row.StepAttempts,
+        RetriedFromInstanceId = row.RetriedFromInstanceId,
         OwnerNodeId = row.OwnerNodeId,
         LeaseExpiresAt = row.LeaseExpiresAt,
         ActiveNodes = row.ActiveNodesJson is null

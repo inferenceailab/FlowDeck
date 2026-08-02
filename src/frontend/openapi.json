@@ -247,6 +247,38 @@
         }
       }
     },
+    "/api/instances/{instanceId}/retry": {
+      "post": {
+        "tags": [
+          "InstanceEndpoints"
+        ],
+        "summary": "Starts a new instance repeating a finished one from the beginning.",
+        "operationId": "RetryWorkflowInstance",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instances/{instanceId}/cancel-and-roll-back": {
       "post": {
         "tags": [
@@ -404,7 +436,8 @@
           "errorType",
           "errorMessage",
           "ownerNodeId",
-          "leaseExpiresAt"
+          "leaseExpiresAt",
+          "retriedFromInstanceId"
         ],
         "type": "object",
         "properties": {
@@ -481,6 +514,13 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "retriedFromInstanceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           },
           "awaitingRecovery": {
             "type": "boolean"

@@ -32,6 +32,7 @@ describe('InstanceDetail cancellation', () => {
     errorMessage: null,
 ownerNodeId: null,
 leaseExpiresAt: null,
+retriedFromInstanceId: null,
 awaitingRecovery: false,
   });
 
