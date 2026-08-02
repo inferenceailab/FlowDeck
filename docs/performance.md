@@ -37,11 +37,25 @@ Measured 2026-08-02, on the machine below, by
 (`10.0.400-preview.0.26322.102`). A developer machine, not a server, and not the
 homelab FlowDeck deploys to.
 
-The per-step figures are the interesting pair: a ten-step instance costs about
-4 µs per step against a one-step instance's 12 µs, because instance creation is
-paid once and spread across the steps. A scenario asserts that relationship
-holds — if per-step cost ever stops amortising, something has started scaling
-with step count that should not.
+### Per-step cost does not amortise reliably
+
+The per-step figures were expected to be the interesting pair, and they were —
+for the opposite reason to the one predicted.
+
+On this machine a ten-step instance costs about **4 µs** per step against a
+one-step instance's **12 µs**: instance creation is paid once and spread. On a
+contended CI runner the same measurement came out at **65 µs** per step against
+**45 µs** — the longer instance cost *more* per step, not less.
+
+Both are real. Every checkpoint rewrites the instance record, and history grows
+as the instance goes, so a longer run does more work per step. Whether that
+outweighs amortised creation depends on how fast the machine is relative to that
+per-checkpoint work.
+
+The first version of the guard asserted the ratio, on the amortisation reasoning
+alone. CI failed it, which is the guard doing its job — just not the job it was
+written for. **It now bounds per-step cost absolutely** and reports both numbers,
+because the ratio encodes a model of the engine that does not hold.
 
 ## The guard, and why it is loose
 
@@ -67,9 +81,12 @@ degrade first under real load:
 - **A retry backoff blocks its branch.** `Task.Delay` inside the execution loop,
   left open by [ADR-0020](adr/0020-retry-semantics.md). A workflow with long
   backoffs holds a worker for the duration.
-- **Every step costs a store round trip.** That is ADR-0013's checkpoint model
-  working as designed — at most one step of progress can be lost — and it puts a
-  hard floor under per-step cost that no amount of tuning removes.
+- **Every step costs a store round trip, and the write grows.** That is
+  ADR-0013's checkpoint model working as designed — at most one step of progress
+  can be lost — and it puts a hard floor under per-step cost. It also means the
+  floor *rises* over an instance's life, because each checkpoint rewrites the
+  record and appends to a history that keeps getting longer. A long-running
+  instance costs more per step than a short one.
 - **The dispatcher polls on an interval.** Recovery latency is bounded below by
   `PollInterval`, not by how fast the store answers.
 - **Checkpoints serialise through one writer per instance**

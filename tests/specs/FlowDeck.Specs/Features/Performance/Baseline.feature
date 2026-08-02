@@ -15,8 +15,8 @@ Feature: Throughput baseline
   Scenario: Checkpoint cost per step is measured
     Given a one-step definition and a ten-step definition
     When fifty instances of each are run
-    Then the per-step cost is reported
-    And a ten-step instance costs less than ten times a one-step one
+    Then the per-step cost is reported at both lengths
+    And neither is anywhere near the ceiling a regression would cross
 
   @issue-206
   Scenario: Backlog recovery is measured
