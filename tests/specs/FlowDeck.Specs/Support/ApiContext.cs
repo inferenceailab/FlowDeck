@@ -69,6 +69,17 @@ public sealed class ApiContext : IDisposable
     /// <summary>The service provider of the running host, for flushing exporters.</summary>
     public IServiceProvider Services => this.Started().Services;
 
+    /// <summary>
+    /// The registry the running API populated.
+    /// </summary>
+    /// <remarks>
+    /// For scenarios that build a <i>second</i> engine over the same store -
+    /// which is what "a host that has since gone" means. Taking the running
+    /// host's registry rather than rebuilding one keeps the two engines
+    /// executing the same definitions.
+    /// </remarks>
+    public WorkflowRegistry Registry => this.Started().Services.GetRequiredService<WorkflowRegistry>();
+
     /// <summary>The engine the running API is using, for arranging state.</summary>
     public WorkflowEngine Engine => this.Started().Services.GetRequiredService<WorkflowEngine>();
 

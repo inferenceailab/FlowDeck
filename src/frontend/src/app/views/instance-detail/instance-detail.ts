@@ -87,6 +87,22 @@ export class InstanceDetail implements OnInit {
   /** Whether a cancel request is in flight. */
   protected readonly cancelling = signal(false);
 
+  /** Whether a resume request is in flight. */
+  protected readonly resuming = signal(false);
+
+  /** A failed resume, shown without discarding the loaded instance. */
+  protected readonly resumeError = signal<string | null>(null);
+
+  /**
+   * Whether this instance can be resumed.
+   *
+   * Only Suspended. Unlike cancel, which applies to anything in flight, resume
+   * means "continue from where it parked" — and an instance that is Running has
+   * not parked. The API is still the authority; disabling a button is a
+   * courtesy, and a stale view can still produce a 409.
+   */
+  protected readonly canResume = computed(() => this.instance()?.status === 'Suspended');
+
   /** A failed cancel, shown without discarding the loaded instance. */
   protected readonly cancelError = signal<string | null>(null);
 
@@ -143,6 +159,33 @@ export class InstanceDetail implements OnInit {
         // cancel does not mean the instance could not be loaded, and blanking
         // the page would lose the context the operator was acting on.
         this.cancelError.set(describeHttpError(error));
+      },
+    });
+  }
+
+  /**
+   * Resumes the instance.
+   *
+   * No confirmation gate, unlike cancel. Resuming is what the workflow was
+   * waiting for, and it is not irreversible — a misclick continues something
+   * that was going to continue anyway, where a misclick on cancel ends it.
+   */
+  protected resume(): void {
+    this.resuming.set(true);
+    this.resumeError.set(null);
+
+    this.instances.resume(this.instanceId()).subscribe({
+      next: () => {
+        this.resuming.set(false);
+
+        // Reloaded rather than patched from the response: resuming may have
+        // run several steps, and the timeline is what an operator looks at
+        // next.
+        this.load();
+      },
+      error: (error: unknown) => {
+        this.resuming.set(false);
+        this.resumeError.set(describeHttpError(error));
       },
     });
   }

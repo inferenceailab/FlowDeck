@@ -250,6 +250,7 @@ h2 {
 }
 
 .cancel-button,
+.resume-button,
 .confirm-actions button {
   padding: 0.4rem 0.9rem;
   border-radius: var(--radius);
@@ -261,6 +262,7 @@ h2 {
 }
 
 .cancel-button:hover:not(:disabled),
+.resume-button:hover:not(:disabled),
 .confirm-actions button:hover:not(:disabled) {
   background: var(--surface-hover);
 }
@@ -270,12 +272,14 @@ h2 {
   unreadable fails contrast for exactly the users who most need to read it.
 */
 .cancel-button:disabled,
+.resume-button:disabled,
 .confirm-actions button:disabled {
   color: var(--text-muted);
   cursor: not-allowed;
 }
 
 .cancel-button:focus-visible,
+.resume-button:focus-visible,
 .confirm-actions button:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

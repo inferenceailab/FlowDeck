@@ -178,6 +178,10 @@ public static class InstanceEndpoints
             .WithName("CancelWorkflowInstance")
             .WithSummary("Stops a workflow instance permanently.");
 
+        instances.MapPost("/{instanceId:guid}/resume", ResumeAsync)
+            .WithName("ResumeWorkflowInstance")
+            .WithSummary("Continues a suspended workflow instance.");
+
         instances.MapGet("/{instanceId:guid}/history", GetHistoryAsync)
             .WithName("GetWorkflowInstanceHistory")
             .WithSummary("Reads an instance's execution history, in order.");
@@ -240,6 +244,46 @@ public static class InstanceEndpoints
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Accepted(
+            $"/api/instances/{instance.Id}",
+            InstanceResponse.From(instance, timeProvider));
+    }
+
+    /// <summary>
+    /// Resumes a suspended instance.
+    /// </summary>
+    /// <remarks>
+    /// The engine has had <c>ResumeAsync</c> since #12, where it existed only to
+    /// prove that a cancelled instance runs no further steps. Until now it was
+    /// reachable from nowhere: a suspended workflow could only be continued by
+    /// code inside the process that started it, holding the engine instance
+    /// (#68).
+    ///
+    /// <para>
+    /// <c>POST /resume</c>, mirroring <c>/cancel</c>, and <c>202 Accepted</c>
+    /// for the same reason starting returns it: the instance has been told to
+    /// continue, and what it does next may take a while. The response carries
+    /// the instance as it stands when the call returns, which for a short
+    /// workflow is already <c>Completed</c> and for one that parks again is
+    /// <c>Suspended</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// Resuming an instance that is not suspended raises
+    /// <see cref="InvalidStateTransitionException"/>, mapped to <c>409</c>. That
+    /// covers both the terminal case and the race where two callers resume the
+    /// same instance: the second finds it no longer suspended and is refused,
+    /// rather than both running it.
+    /// </para>
+    /// </remarks>
+    private static async Task<Accepted<InstanceResponse>> ResumeAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await engine.ResumeAsync(instanceId, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",

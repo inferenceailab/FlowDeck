@@ -247,6 +247,38 @@
         }
       }
     },
+    "/api/instances/{instanceId}/resume": {
+      "post": {
+        "tags": [
+          "InstanceEndpoints"
+        ],
+        "summary": "Continues a suspended workflow instance.",
+        "operationId": "ResumeWorkflowInstance",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instances/{instanceId}/history": {
       "get": {
         "tags": [
