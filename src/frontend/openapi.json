@@ -247,6 +247,80 @@
         }
       }
     },
+    "/api/instances/bulk/cancel": {
+      "post": {
+        "tags": [
+          "InstanceEndpoints"
+        ],
+        "summary": "Cancels every instance matching a filter, reporting each one.",
+        "operationId": "BulkCancelWorkflowInstances",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/InstanceStatus"
+            }
+          },
+          {
+            "name": "definitionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkActionReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/bulk/retry": {
+      "post": {
+        "tags": [
+          "InstanceEndpoints"
+        ],
+        "summary": "Retries every finished instance matching a filter, reporting each one.",
+        "operationId": "BulkRetryWorkflowInstances",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/InstanceStatus"
+            }
+          },
+          {
+            "name": "definitionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkActionReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instances/{instanceId}/suspend": {
       "post": {
         "tags": [
@@ -445,6 +519,82 @@
   },
   "components": {
     "schemas": {
+      "BulkActionReport": {
+        "required": [
+          "attempted",
+          "succeeded",
+          "failed",
+          "truncated",
+          "results"
+        ],
+        "type": "object",
+        "properties": {
+          "attempted": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "succeeded": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BulkActionResult"
+            }
+          }
+        }
+      },
+      "BulkActionResult": {
+        "required": [
+          "instanceId",
+          "succeeded",
+          "error",
+          "newInstanceId"
+        ],
+        "type": "object",
+        "properties": {
+          "instanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "succeeded": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "newInstanceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "InstancePage": {
         "required": [
           "items",
