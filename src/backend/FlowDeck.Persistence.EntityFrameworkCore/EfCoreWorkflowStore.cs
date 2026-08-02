@@ -359,6 +359,7 @@ public sealed class EfCoreWorkflowStore(
         row.ErrorMessage = record.ErrorMessage;
         row.StepAttempts = record.StepAttempts;
         row.RetriedFromInstanceId = record.RetriedFromInstanceId;
+        row.SuspendRequested = record.SuspendRequested;
         row.OwnerNodeId = record.OwnerNodeId;
         row.LeaseExpiresAt = record.LeaseExpiresAt;
 
@@ -397,6 +398,7 @@ public sealed class EfCoreWorkflowStore(
         ErrorMessage = row.ErrorMessage,
         StepAttempts = row.StepAttempts,
         RetriedFromInstanceId = row.RetriedFromInstanceId,
+        SuspendRequested = row.SuspendRequested,
         OwnerNodeId = row.OwnerNodeId,
         LeaseExpiresAt = row.LeaseExpiresAt,
         ActiveNodes = row.ActiveNodesJson is null
