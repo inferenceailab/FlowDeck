@@ -110,18 +110,20 @@ public sealed class GraphDocumentationSteps
         Assert.Contains("no matching condition", this.section, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Then("it states that suspending inside a branch is not supported")]
-    public void ThenItStatesTheSuspensionLimit()
+    [Then("it states what suspending inside a branch does")]
+    public void ThenItStatesTheSuspensionRule()
     {
         Assert.Contains("Suspending inside a branch", this.section, StringComparison.OrdinalIgnoreCase);
 
-        // That it *fails*, not merely that it is unsupported. "Not supported"
-        // reads as "does nothing" to plenty of people.
-        Assert.Contains("fails the instance", this.section, StringComparison.OrdinalIgnoreCase);
-        // The issue that would lift the limit, not the one that happened to
-        // introduce the guard. A limitation citing a closed issue reads as
-        // already fixed.
-        Assert.Contains("#179", this.section, StringComparison.Ordinal);
+        // That it parks the instance rather than failing it - the behaviour
+        // #179 replaced - and that it is not immediate, which is the part an
+        // operator watching the dashboard would otherwise read as a bug.
+        Assert.Contains("parks the whole instance", this.section, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not immediately", this.section, StringComparison.OrdinalIgnoreCase);
+
+        // And that a sibling failure still wins, so nobody resumes an instance
+        // that has already been rolled back.
+        Assert.Contains("the instance **fails**", this.section, StringComparison.OrdinalIgnoreCase);
     }
 
     [Then("it states that compensation is ordered by completion, not by declaration")]
@@ -135,14 +137,18 @@ public sealed class GraphDocumentationSteps
         Assert.Contains("either relative order", this.section, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Then("the known limitations table names suspending inside a branch")]
-    public void ThenTheLimitationsTableNamesIt()
+    [Then("the known limitations table no longer claims branch suspension fails")]
+    public void ThenTheLimitationsTableIsCurrent()
     {
         var table = Section(this.guide, "## Known limitations");
 
-        // The table is where an author checks before relying on something, so a
-        // limit documented only in prose is a limit half the readers miss.
-        Assert.Contains("Suspending inside a branch", table, StringComparison.OrdinalIgnoreCase);
+        // Removed by #179 rather than left behind. A limitations table that
+        // lists something the engine now does is worse than no table: a reader
+        // restructures a workflow to avoid a limit that is gone.
+        Assert.DoesNotContain("Suspending inside a branch", table, StringComparison.OrdinalIgnoreCase);
+
+        // The entry beside it is still true and still listed, so this is not
+        // passing because the table lost its rows.
         Assert.Contains("Best-effort", table, StringComparison.OrdinalIgnoreCase);
     }
 
