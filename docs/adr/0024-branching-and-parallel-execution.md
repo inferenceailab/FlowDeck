@@ -1,6 +1,6 @@
 # ADR-0024: Branching and parallel execution
 
-**Status:** Accepted · **Milestone:** M7 · **Issues:** #40, #161
+**Status:** Accepted, amended by [ADR-0029](0029-suspending-inside-a-branch.md) · **Milestone:** M7 · **Issues:** #40, #161
 
 ## Context
 
