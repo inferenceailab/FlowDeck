@@ -178,6 +178,10 @@ public static class InstanceEndpoints
             .WithName("CancelWorkflowInstance")
             .WithSummary("Stops a workflow instance permanently.");
 
+        instances.MapPost("/{instanceId:guid}/cancel-and-roll-back", CancelAndCompensateAsync)
+            .WithName("CancelAndRollBackWorkflowInstance")
+            .WithSummary("Stops a workflow instance and unwinds the work it had completed.");
+
         instances.MapPost("/{instanceId:guid}/resume", ResumeAsync)
             .WithName("ResumeWorkflowInstance")
             .WithSummary("Continues a suspended workflow instance.");
@@ -244,6 +248,36 @@ public static class InstanceEndpoints
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.CancelAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Accepted(
+            $"/api/instances/{instance.Id}",
+            InstanceResponse.From(instance, timeProvider));
+    }
+
+    /// <summary>
+    /// Cancels an instance and rolls back what it had completed.
+    /// </summary>
+    /// <remarks>
+    /// Its own route rather than <c>/cancel?compensate=true</c>. The two are
+    /// different decisions with different consequences, and a destructive
+    /// option behind a query parameter is one a tired operator sets wrongly
+    /// (ADR-0028 decision 3).
+    ///
+    /// <para>
+    /// The path spells out what happens. A caller reading their own request log
+    /// can tell which of the two they sent, which <c>?compensate=true</c> makes
+    /// them squint at.
+    /// </para>
+    /// </remarks>
+    private static async Task<Accepted<InstanceResponse>> CancelAndCompensateAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await engine
+            .CancelAndCompensateAsync(instanceId, cancellationToken)
+            .ConfigureAwait(false);
 
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",

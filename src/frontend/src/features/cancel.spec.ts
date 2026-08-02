@@ -113,4 +113,89 @@ describeFeature(feature, ({ Scenario }) => {
       expect(cancel!.disabled).toBe(true);
     });
   });
+
+  Scenario('Cancelling and rolling back is a separate action', ({ Given, When, Then, And }) => {
+    let view: Rendered;
+    let displayed: Instance;
+
+    // Captured while the prompt is open. Confirming closes it, so reading the
+    // wording afterwards would assert against a dialog that is no longer there.
+    let promptText = '';
+
+    Given('a suspended instance is displayed', () => {
+      displayed = anInstance({ id: ID, status: statusOf('Suspended'), currentStepName: 'approve' });
+    });
+
+    When('I trigger the cancel and roll back action', async () => {
+      view = await renderView(InstanceDetail, {
+        inputs: { instanceId: ID },
+        responder: {
+          respond: (request) =>
+            request.url.includes('/api/workflows/')
+              ? { body: { title: 'Not Found' }, status: 404 }
+              : { body: request.url.endsWith('/history') ? [] : displayed },
+        },
+        interact: (fixture, flush) => {
+          flush();
+          fixture.nativeElement.querySelector('.rollback-button').click();
+          fixture.detectChanges();
+
+          promptText = fixture.nativeElement.querySelector('.confirm').textContent ?? '';
+
+          fixture.nativeElement.querySelector('.confirm-actions button').click();
+          fixture.detectChanges();
+          flush();
+        },
+      });
+    });
+
+    Then('the prompt says work already done will be reversed', () => {
+      // Asserted on the rendered prompt rather than on the button label,
+      // because the prompt is the last thing an operator reads before an
+      // irreversible action.
+      expect(promptText).toContain('will be reversed');
+    });
+
+    And('confirming calls the cancel-and-roll-back endpoint', () => {
+      expect(
+        view.requests.filter((request) => request.url.endsWith('/cancel-and-roll-back')),
+      ).toHaveLength(1);
+
+      // And not the plain one. Two buttons wired to the same call would pass
+      // every other assertion here.
+      expect(view.requests.filter((request) => request.url.endsWith('/cancel'))).toHaveLength(0);
+    });
+  });
+
+  Scenario('Plain cancel says work is not reversed', ({ Given, When, Then }) => {
+    let view: Rendered;
+    let displayed: Instance;
+
+    Given('a suspended instance is displayed', () => {
+      displayed = anInstance({ id: ID, status: statusOf('Suspended'), currentStepName: 'approve' });
+    });
+
+    When('I trigger the cancel action', async () => {
+      view = await renderView(InstanceDetail, {
+        inputs: { instanceId: ID },
+        responder: {
+          respond: (request) =>
+            request.url.includes('/api/workflows/')
+              ? { body: { title: 'Not Found' }, status: 404 }
+              : { body: request.url.endsWith('/history') ? [] : displayed },
+        },
+        interact: (fixture, flush) => {
+          flush();
+          fixture.nativeElement.querySelector('.cancel-button').click();
+          fixture.detectChanges();
+        },
+      });
+    });
+
+    Then('the prompt says work already done is not reversed', () => {
+      expect(view.element.textContent).toContain('not');
+      expect(view.element.textContent).toContain('reversed');
+      expect(view.element.textContent).not.toContain('will be reversed');
+    });
+  });
 });

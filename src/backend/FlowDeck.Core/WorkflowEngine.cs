@@ -325,6 +325,78 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
+    /// Stops an instance and unwinds the work it had completed.
+    /// </summary>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">Already terminal.</exception>
+    /// <remarks>
+    /// A separate action from <see cref="CancelAsync"/> rather than a flag on
+    /// it (ADR-0028 decision 3). An operator stopping a workflow to fix forward
+    /// would be destroyed by an automatic rollback; one abandoning work wants
+    /// exactly that. An irreversible, destructive choice should be made by
+    /// picking the thing you want, not by remembering to set a parameter.
+    ///
+    /// <para>
+    /// The instance stays <c>Running</c> through the rollback, because
+    /// terminal states are final (ADR-0008) and compensation
+    /// therefore has to happen before one is reached - the same ordering a
+    /// failure follows.
+    /// </para>
+    ///
+    /// <para>
+    /// It settles as <c>Cancelled</c> when there was nothing to undo. Reporting
+    /// <c>Compensated</c> for a workflow that declared no compensating actions
+    /// would tell an operator the instance cleaned itself up when nothing
+    /// happened at all - the same distinction <see cref="CompensateAsync"/>
+    /// already draws for a failure.
+    /// </para>
+    /// </remarks>
+    public async Task<WorkflowInstance> CancelAndCompensateAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        var instance = WorkflowInstance.FromRecord(record);
+
+        if (instance.IsTerminal)
+        {
+            throw new InvalidStateTransitionException(instanceId, instance.Status, InstanceStatus.Cancelled);
+        }
+
+        var steps = Compile(this.registry.Get(record.DefinitionId, record.DefinitionVersion));
+        var data = new WorkflowData(record.Data);
+        var run = new Run(this, instance, data, record.Input);
+
+        using var scope = this.Scope(instance);
+
+        var rolledBack = await this
+            .CompensateAsync(run, instance, steps, data, record.Input, cancellationToken)
+            .ConfigureAwait(false);
+
+        // CompensateAsync answers Failed when it found nothing to undo, because
+        // that is what a failure with no compensating actions settles as. Here
+        // the instance did not fail - an operator stopped it - so the same
+        // finding means Cancelled.
+        instance.Status = rolledBack == InstanceStatus.Failed ? InstanceStatus.Cancelled : rolledBack;
+        instance.CompletedAt = this.timeProvider.GetUtcNow();
+
+        await run.CheckpointAsync([], cancellationToken).ConfigureAwait(false);
+
+        this.logger.InstanceCancelled(instance.DefinitionId, instance.CurrentStepName);
+
+        if (instance.Status != InstanceStatus.Cancelled)
+        {
+            this.logger.InstanceCompensated(instance.DefinitionId, instance.Status);
+        }
+
+        this.metrics.InstanceSettled(instance);
+
+        return instance;
+    }
+
+    /// <summary>
     /// Removes a definition version, refusing while instances still run it.
     /// </summary>
     /// <returns>How many instances have ever run the retired version.</returns>
