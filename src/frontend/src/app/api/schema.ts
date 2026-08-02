@@ -106,6 +106,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instances/bulk/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancels every instance matching a filter, reporting each one. */
+        post: operations["BulkCancelWorkflowInstances"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instances/bulk/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retries every finished instance matching a filter, reporting each one. */
+        post: operations["BulkRetryWorkflowInstances"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instances/{instanceId}/suspend": {
         parameters: {
             query?: never;
@@ -212,6 +246,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BulkActionReport: {
+            /** Format: int32 */
+            attempted: number | string;
+            /** Format: int32 */
+            succeeded: number | string;
+            /** Format: int32 */
+            failed: number | string;
+            truncated: boolean;
+            results: components["schemas"]["BulkActionResult"][];
+        };
+        BulkActionResult: {
+            /** Format: uuid */
+            instanceId: string;
+            succeeded: boolean;
+            error: null | string;
+            /** Format: uuid */
+            newInstanceId: null | string;
+        };
         InstancePage: {
             items: components["schemas"]["InstanceResponse"][];
             /** Format: int32 */
@@ -440,6 +492,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstanceResponse"];
+                };
+            };
+        };
+    };
+    BulkCancelWorkflowInstances: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["InstanceStatus"];
+                definitionId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkActionReport"];
+                };
+            };
+        };
+    };
+    BulkRetryWorkflowInstances: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["InstanceStatus"];
+                definitionId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkActionReport"];
                 };
             };
         };

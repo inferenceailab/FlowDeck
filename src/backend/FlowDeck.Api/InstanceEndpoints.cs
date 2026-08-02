@@ -142,6 +142,52 @@ public sealed record StepHistoryResponse(
 }
 
 /// <summary>
+/// What one instance in a bulk action did.
+/// </summary>
+/// <param name="InstanceId">The instance the action was attempted on.</param>
+/// <param name="Succeeded">Whether it worked.</param>
+/// <param name="Error">
+/// Why it did not, or null. The message the engine gave, so an operator can
+/// tell "already finished" from "no longer registered" without guessing.
+/// </param>
+/// <param name="NewInstanceId">
+/// For a retry, the instance that was started. Null for a cancel, and null for
+/// anything that failed.
+/// </param>
+public sealed record BulkActionResult(
+    Guid InstanceId,
+    bool Succeeded,
+    string? Error,
+    Guid? NewInstanceId);
+
+/// <summary>
+/// What a bulk action did, item by item.
+/// </summary>
+/// <param name="Truncated">
+/// Whether more instances matched than were attempted. Stated rather than left
+/// to look like the set was smaller than it was - an operator who thinks they
+/// cancelled everything and did not is worse off than one who was told.
+/// </param>
+/// <remarks>
+/// <b>Best-effort, not atomic</b> (ADR-0028 decision 5). Fifty instances are
+/// fifty independent operations against fifty independent concurrency tokens;
+/// a transaction across all of them is something no store contract here
+/// promises, and it would serialise the engine behind one operator click.
+///
+/// <para>
+/// So the body is the answer and the status code is not. A bulk action that
+/// half-worked and said nothing would leave an operator re-deriving the state
+/// by hand, which is worse than not offering the action.
+/// </para>
+/// </remarks>
+public sealed record BulkActionReport(
+    int Attempted,
+    int Succeeded,
+    int Failed,
+    bool Truncated,
+    IReadOnlyList<BulkActionResult> Results);
+
+/// <summary>
 /// HTTP surface for inspecting and operating on instances.
 /// </summary>
 public static class InstanceEndpoints
@@ -179,6 +225,16 @@ public static class InstanceEndpoints
         instances.MapPost("/{instanceId:guid}/cancel", CancelAsync)
             .WithName("CancelWorkflowInstance")
             .WithSummary("Stops a workflow instance permanently.");
+
+        // Before the parameterised routes for readability only - the guid
+        // constraint already keeps "bulk" from matching them.
+        instances.MapPost("/bulk/cancel", BulkCancelAsync)
+            .WithName("BulkCancelWorkflowInstances")
+            .WithSummary("Cancels every instance matching a filter, reporting each one.");
+
+        instances.MapPost("/bulk/retry", BulkRetryAsync)
+            .WithName("BulkRetryWorkflowInstances")
+            .WithSummary("Retries every finished instance matching a filter, reporting each one.");
 
         instances.MapPost("/{instanceId:guid}/suspend", SuspendAsync)
             .WithName("SuspendWorkflowInstance")
@@ -266,6 +322,101 @@ public static class InstanceEndpoints
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",
             InstanceResponse.From(instance, timeProvider));
+    }
+
+    /// <summary>
+    /// Cancels every instance matching a filter.
+    /// </summary>
+    private static Task<Ok<BulkActionReport>> BulkCancelAsync(
+        WorkflowEngine engine,
+        InstanceStatus? status = null,
+        string? definitionId = null,
+        CancellationToken cancellationToken = default) =>
+        BulkAsync(
+            engine,
+            status,
+            definitionId,
+            async id =>
+            {
+                await engine.CancelAsync(id, cancellationToken).ConfigureAwait(false);
+                return (Guid?)null;
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// Retries every finished instance matching a filter, from the start.
+    /// </summary>
+    /// <remarks>
+    /// From the start rather than from the failing step, because a bulk action
+    /// cannot know whether each instance's completed steps are safe to skip.
+    /// The per-instance route is where that judgement is made.
+    /// </remarks>
+    private static Task<Ok<BulkActionReport>> BulkRetryAsync(
+        WorkflowEngine engine,
+        InstanceStatus? status = null,
+        string? definitionId = null,
+        CancellationToken cancellationToken = default) =>
+        BulkAsync(
+            engine,
+            status,
+            definitionId,
+            async id => (await engine.RetryAsync(id, cancellationToken).ConfigureAwait(false)).Id,
+            cancellationToken);
+
+    /// <summary>
+    /// Applies one action across a filtered set, reporting each item.
+    /// </summary>
+    /// <remarks>
+    /// Sequential, not parallel. Fifty concurrent writes against one store to
+    /// save an operator a second is a trade nobody asked for, and it would make
+    /// the per-item report arrive in an order that has nothing to do with the
+    /// order the instances were listed in.
+    /// </remarks>
+    private static async Task<Ok<BulkActionReport>> BulkAsync(
+        WorkflowEngine engine,
+        InstanceStatus? status,
+        string? definitionId,
+        Func<Guid, Task<Guid?>> action,
+        CancellationToken cancellationToken)
+    {
+        // One more than the cap, so "there were more" is a fact rather than an
+        // inference from the count happening to equal the limit.
+        var matched = await engine
+            .ListInstancesAsync(
+                new InstanceFilter { Status = status, DefinitionId = definitionId, Take = MaxPageSize + 1 },
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var truncated = matched.Count > MaxPageSize;
+
+        Guid[] targets = [.. matched.Take(MaxPageSize).Select(instance => instance.Id)];
+
+        var results = new List<BulkActionResult>(targets.Length);
+
+        foreach (var id in targets)
+        {
+            try
+            {
+                var started = await action(id).ConfigureAwait(false);
+
+                results.Add(new BulkActionResult(id, true, null, started));
+            }
+            catch (FlowDeckException error)
+            {
+                // Caught per item, so one refusal does not stop the rest. Only
+                // engine faults: anything else is a bug in FlowDeck rather than
+                // a thing this instance could not do, and swallowing it would
+                // report a broken engine as forty-nine successes.
+                results.Add(new BulkActionResult(id, false, error.Message, null));
+            }
+        }
+
+        return TypedResults.Ok(new BulkActionReport(
+            results.Count,
+            results.Count(result => result.Succeeded),
+            results.Count(result => !result.Succeeded),
+            truncated,
+            results));
     }
 
     /// <summary>
