@@ -69,10 +69,8 @@ That answers throughput and failure rate, which is what #41's intent names.
 
 **Deliberately not built**, each considered and each deferred:
 
-- **Step duration histogram** (#198). The obvious next one, and the question an
-  operator actually arrives with is "which step is slow". Deferred because
-  history already records per-step start and completion, so the data exists — it
-  is unaggregated, not missing.
+- ~~**Step duration histogram** (#198)~~ — **added 2026-08-02**, and with it the
+  histogram rendering decision 4's endpoint had declined to invent.
 - ~~**Retry and compensation counters** (#199)~~ — **added 2026-08-02.** M5 built
   both mechanisms and neither was visible without reading history per instance.
 - **Cluster health gauges** (#200). Instances running, leases held, recoveries

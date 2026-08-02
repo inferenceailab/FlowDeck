@@ -70,7 +70,7 @@ public sealed class RetryMetricsSteps(EngineContext world)
 
         // Two, not three. The third attempt succeeded, and counting it would
         // make a step that recovered look the same as one still failing.
-        Assert.Equal(2, this.Retries().Sum(measurement => measurement.Value));
+        Assert.Equal(2, (long)this.Retries().Sum(measurement => measurement.Value));
 
     [Then("a workflow that never retried reports nothing")]
     public void ThenNoRetriesForTheOtherStep() =>
@@ -81,14 +81,14 @@ public sealed class RetryMetricsSteps(EngineContext world)
     {
         // Which step is the part an operator cannot get anywhere else without
         // reading history per instance.
-        Assert.Equal(1, this.Retries().Where(m => Equals(m.Tags["step.name"], "reserve")).Sum(m => m.Value));
-        Assert.Equal(1, this.Retries().Where(m => Equals(m.Tags["step.name"], "charge")).Sum(m => m.Value));
+        Assert.Equal(1, (long)this.Retries().Where(m => Equals(m.Tags["step.name"], "reserve")).Sum(m => m.Value));
+        Assert.Equal(1, (long)this.Retries().Where(m => Equals(m.Tags["step.name"], "charge")).Sum(m => m.Value));
     }
 
     [Then("two compensating actions are counted, both as undone")]
     public void ThenTwoUndone()
     {
-        Assert.Equal(2, this.Compensations().Sum(m => m.Value));
+        Assert.Equal(2, (long)this.Compensations().Sum(m => m.Value));
         Assert.All(this.Compensations(), m => Assert.Equal("undone", m.Tags["outcome"]));
     }
 
@@ -97,8 +97,8 @@ public sealed class RetryMetricsSteps(EngineContext world)
     {
         // The difference between "one undo failed" and "nine did", which the
         // per-instance CompensationFailed counter cannot express.
-        Assert.Equal(1, this.Compensations().Where(m => Equals(m.Tags["outcome"], "undone")).Sum(m => m.Value));
-        Assert.Equal(1, this.Compensations().Where(m => Equals(m.Tags["outcome"], "failed")).Sum(m => m.Value));
+        Assert.Equal(1, (long)this.Compensations().Where(m => Equals(m.Tags["outcome"], "undone")).Sum(m => m.Value));
+        Assert.Equal(1, (long)this.Compensations().Where(m => Equals(m.Tags["outcome"], "failed")).Sum(m => m.Value));
 
         Assert.Equal(
             "reserve",

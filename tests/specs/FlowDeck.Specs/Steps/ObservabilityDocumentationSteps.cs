@@ -158,11 +158,14 @@ public sealed partial class ObservabilityDocumentationSteps(EngineContext world)
         // can disclose on its own.
         Assert.Contains("Keys were considered and rejected", this.guide, StringComparison.OrdinalIgnoreCase);
 
-    [Then("it names step duration and cluster health as deliberately absent")]
+    [Then("it names what is still not measured")]
     public void ThenItNamesWhatIsAbsent()
     {
         Assert.Contains("deliberately not measured", this.guide, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Step duration", this.guide, StringComparison.OrdinalIgnoreCase);
+
+        // Step duration and retry counts were on this list and have since been
+        // built (#198, #199), so asserting them here would now assert the
+        // opposite of the truth. Cluster health is what remains.
         Assert.Contains("Cluster health", this.guide, StringComparison.OrdinalIgnoreCase);
     }
 

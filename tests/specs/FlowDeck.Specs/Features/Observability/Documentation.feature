@@ -22,7 +22,7 @@ Feature: What FlowDeck emits is documented and bounded
   @issue-190
   Scenario: The guide names what is not measured
     Given the observability guide
-    Then it names step duration and cluster health as deliberately absent
+    Then it names what is still not measured
 
   @issue-190
   Scenario: No workflow data escapes into any signal

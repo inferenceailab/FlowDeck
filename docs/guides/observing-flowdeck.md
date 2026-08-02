@@ -42,6 +42,22 @@ it.
 | `flowdeck_instances_compensated_total` | counter | `definition_id`, `definition_version`, `outcome` |
 | `flowdeck_steps_retried_total` | counter | `definition_id`, `definition_version`, `step_name` |
 | `flowdeck_compensations_total` | counter | `definition_id`, `definition_version`, `step_name`, `outcome` |
+| `flowdeck_steps_duration_seconds` | histogram | `definition_id`, `definition_version`, `step_name`, `outcome` |
+
+`flowdeck_steps_duration_seconds` records **one observation per execution**, so a
+step retried three times contributes three — averaging them into one would hide
+that it took three goes. It is tagged with the outcome, because a step that fails
+fast and a step that succeeds slowly are different problems and should not share
+a series.
+
+Seconds, not milliseconds: Prometheus and the OpenTelemetry conventions both use
+base units, and a histogram named in the wrong one is a dashboard nobody can
+compare against anything else. The engine's *logs* stay in milliseconds, where a
+human reads them.
+
+Bucket edges are `0.001 0.005 0.01 0.05 0.1 0.5 1 5 10 30` seconds. Anything
+slower lands in `+Inf` and is still counted — a step waiting on something slow is
+exactly the case worth finding.
 
 `flowdeck_steps_retried_total` counts attempts **beyond the first**, so an
 ordinary run contributes nothing and the number reads as "how much trouble is
@@ -68,9 +84,6 @@ how it is used.
 
 ### What is deliberately not measured
 
-- **Step duration** (#198). The question an operator usually arrives with is
-  "which step is slow", and the answer today is in execution history per instance
-  rather than aggregated. The data exists; the aggregate does not.
 - **Cluster health** (#200) — instances running, leases held, recoveries
   performed. M6's machinery is inferred from the dashboard rather than measured.
 
@@ -160,7 +173,6 @@ apart; it is not something a log reader should have to parse.
 | Limitation | Tracked by |
 | --- | --- |
 | `/metrics` is unauthenticated | #42 |
-| No step-duration metric | #198 |
 | No cluster health metrics | #200 |
 | Nothing distinguishes a fork's arms in metrics | — |
 
