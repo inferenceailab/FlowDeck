@@ -1136,11 +1136,15 @@ public sealed class WorkflowEngine
 
                 var finishedAt = engine.timeProvider.GetUtcNow();
 
+                var elapsed = finishedAt - startedAt;
+
                 engine.logger.StepFinished(
                     step.Name,
                     result.Status,
-                    (finishedAt - startedAt).TotalMilliseconds,
+                    elapsed.TotalMilliseconds,
                     attempt);
+
+                engine.metrics.StepFinished(instance, step.Name, result.Status, elapsed.TotalSeconds);
 
                 if (result.Status == StepStatus.Failed)
                 {

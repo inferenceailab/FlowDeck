@@ -110,8 +110,15 @@ public sealed class InstanceCounterSteps(EngineContext world)
         // the assertions above would still pass.
         Assert.Equal(0, world.Metrics.Total("compensated"));
 
-        // Three starts and three settlements, and nothing else at all.
-        Assert.Equal(6, world.Metrics.All.Count);
+        // Three starts and three settlements, and no other *lifecycle*
+        // measurement. Scoped to that family rather than to everything the
+        // engine emits, because step durations and retry counters now share
+        // the meter and counting them here would make this assertion break
+        // every time an unrelated instrument is added (#198, #199).
+        Assert.Equal(
+            6,
+            world.Metrics.All.Count(measurement =>
+                measurement.Instrument.StartsWith("flowdeck.instances.", StringComparison.Ordinal)));
     }
 
     [Then("the compensated counter reports one")]

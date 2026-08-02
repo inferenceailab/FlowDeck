@@ -42,6 +42,7 @@ public sealed class EngineMetrics : IDisposable
     private readonly Counter<long> failed;
     private readonly Counter<long> cancelled;
     private readonly Counter<long> compensated;
+    private readonly Histogram<double> stepDuration;
     private readonly Counter<long> retries;
     private readonly Counter<long> compensations;
 
@@ -74,6 +75,18 @@ public sealed class EngineMetrics : IDisposable
             unit: "{instance}",
             description: "Instances that failed and rolled back, tagged with how the rollback ended.");
 
+        this.stepDuration = this.meter.CreateHistogram<double>(
+            "flowdeck.steps.duration",
+
+            // Seconds, not milliseconds. Prometheus and the OpenTelemetry
+            // semantic conventions both use base units, and a histogram named
+            // in the wrong one is a dashboard nobody can compare against
+            // anything else. The engine's *logs* stay in milliseconds, where a
+            // human reads them.
+            unit: "s",
+            description: "How long each step execution took.",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = BucketBoundaries });
+
         this.retries = this.meter.CreateCounter<long>(
             "flowdeck.steps.retried",
             unit: "{attempt}",
@@ -83,6 +96,48 @@ public sealed class EngineMetrics : IDisposable
             "flowdeck.compensations",
             unit: "{action}",
             description: "Compensating actions run, tagged with whether each undid its step.");
+    }
+
+    /// <summary>
+    /// The bucket edges for <c>flowdeck.steps.duration</c>, in seconds.
+    /// </summary>
+    /// <remarks>
+    /// Published so the scrape endpoint renders the same edges the meter was
+    /// told to use. Two lists would drift, and the drift would be silent: the
+    /// histogram would still render, with buckets that did not match what was
+    /// measured.
+    ///
+    /// <para>
+    /// Chosen for the range a step actually occupies: sub-millisecond for an
+    /// in-memory step, seconds for an HTTP call, and a long tail because a step
+    /// waiting on something slow is exactly the case an operator is looking
+    /// for.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<double> BucketBoundaries { get; } =
+        [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30];
+
+    /// <summary>
+    /// Records how long one step execution took.
+    /// </summary>
+    /// <remarks>
+    /// Per execution, not per step, so a step retried three times contributes
+    /// three observations. Averaging them into one would hide the thing worth
+    /// seeing - that it took three goes.
+    ///
+    /// <para>
+    /// Tagged with the outcome, because a step that fails fast and a step that
+    /// succeeds slowly are different problems and their durations should not
+    /// share a series.
+    /// </para>
+    /// </remarks>
+    public void StepFinished(WorkflowInstance instance, string stepName, StepStatus status, double seconds)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+
+        this.stepDuration.Record(
+            seconds,
+            [.. Tags(instance), new("step.name", stepName), new("outcome", status.ToString())]);
     }
 
     /// <summary>

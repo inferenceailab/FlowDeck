@@ -4,7 +4,12 @@ using FlowDeck.Core;
 namespace FlowDeck.Specs.Support;
 
 /// <summary>One measurement the engine recorded.</summary>
-public sealed record Measurement(string Instrument, long Value, IReadOnlyDictionary<string, object?> Tags);
+/// <param name="Value">
+/// What was recorded. A <c>double</c> so counters and the duration histogram
+/// share one shape - a capture that only understood <c>long</c> silently saw
+/// nothing at all when the first histogram arrived (#198).
+/// </param>
+public sealed record Measurement(string Instrument, double Value, IReadOnlyDictionary<string, object?> Tags);
 
 /// <summary>
 /// Listens to one <see cref="EngineMetrics"/> and keeps what it recorded.
@@ -37,20 +42,11 @@ public sealed class MeterCapture : IDisposable
             },
         };
 
-        this.listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
-        {
-            var recorded = new Dictionary<string, object?>(StringComparer.Ordinal);
+        this.listener.SetMeasurementEventCallback<long>(
+            (instrument, value, tags, _) => this.Record(instrument.Name, value, tags));
 
-            foreach (var tag in tags)
-            {
-                recorded[tag.Key] = tag.Value;
-            }
-
-            lock (this.gate)
-            {
-                this.measurements.Add(new Measurement(instrument.Name, value, recorded));
-            }
-        });
+        this.listener.SetMeasurementEventCallback<double>(
+            (instrument, value, tags, _) => this.Record(instrument.Name, value, tags));
 
         this.listener.Start();
     }
@@ -103,7 +99,22 @@ public sealed class MeterCapture : IDisposable
     ];
 
     /// <summary>What one counter totals.</summary>
-    public long Total(string outcome) => this.Of(outcome).Sum(measurement => measurement.Value);
+    public long Total(string outcome) => (long)this.Of(outcome).Sum(measurement => measurement.Value);
+
+    private void Record(string instrument, double value, ReadOnlySpan<KeyValuePair<string, object?>> tags)
+    {
+        var recorded = new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        foreach (var tag in tags)
+        {
+            recorded[tag.Key] = tag.Value;
+        }
+
+        lock (this.gate)
+        {
+            this.measurements.Add(new Measurement(instrument, value, recorded));
+        }
+    }
 
     public void Dispose()
     {
