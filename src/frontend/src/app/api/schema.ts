@@ -123,6 +123,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instances/{instanceId}/retry-from-failed-step": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Starts a new instance continuing a failed one from the step that broke. */
+        post: operations["RetryWorkflowInstanceFromFailedStep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instances/{instanceId}/cancel-and-roll-back": {
         parameters: {
             query?: never;
@@ -411,6 +428,28 @@ export interface operations {
         };
     };
     RetryWorkflowInstance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceResponse"];
+                };
+            };
+        };
+    };
+    RetryWorkflowInstanceFromFailedStep: {
         parameters: {
             query?: never;
             header?: never;

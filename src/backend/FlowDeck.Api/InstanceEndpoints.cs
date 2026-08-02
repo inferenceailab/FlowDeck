@@ -184,6 +184,10 @@ public static class InstanceEndpoints
             .WithName("RetryWorkflowInstance")
             .WithSummary("Starts a new instance repeating a finished one from the beginning.");
 
+        instances.MapPost("/{instanceId:guid}/retry-from-failed-step", RetryFromFailedStepAsync)
+            .WithName("RetryWorkflowInstanceFromFailedStep")
+            .WithSummary("Starts a new instance continuing a failed one from the step that broke.");
+
         instances.MapPost("/{instanceId:guid}/cancel-and-roll-back", CancelAndCompensateAsync)
             .WithName("CancelAndRollBackWorkflowInstance")
             .WithSummary("Stops a workflow instance and unwinds the work it had completed.");
@@ -276,6 +280,30 @@ public static class InstanceEndpoints
         CancellationToken cancellationToken = default)
     {
         var instance = await engine.RetryAsync(instanceId, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Accepted(
+            $"/api/instances/{instance.Id}",
+            InstanceResponse.From(instance, timeProvider));
+    }
+
+    /// <summary>
+    /// Retries a failed instance from the step that broke.
+    /// </summary>
+    /// <remarks>
+    /// A separate route from <c>/retry</c> rather than a parameter on it. The
+    /// two do different amounts of work - one repeats everything, the other
+    /// skips what already succeeded - and which an operator wants depends on
+    /// whether the completed steps are safe to run twice.
+    /// </remarks>
+    private static async Task<Accepted<InstanceResponse>> RetryFromFailedStepAsync(
+        Guid instanceId,
+        WorkflowEngine engine,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await engine
+            .RetryFromFailedStepAsync(instanceId, cancellationToken)
+            .ConfigureAwait(false);
 
         return TypedResults.Accepted(
             $"/api/instances/{instance.Id}",
