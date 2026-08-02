@@ -279,6 +279,38 @@
         }
       }
     },
+    "/api/instances/{instanceId}/retry-from-failed-step": {
+      "post": {
+        "tags": [
+          "InstanceEndpoints"
+        ],
+        "summary": "Starts a new instance continuing a failed one from the step that broke.",
+        "operationId": "RetryWorkflowInstanceFromFailedStep",
+        "parameters": [
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instances/{instanceId}/cancel-and-roll-back": {
       "post": {
         "tags": [

@@ -400,6 +400,95 @@ public sealed class WorkflowEngine
     }
 
     /// <summary>
+    /// Starts a new instance continuing a failed one from the step that broke.
+    /// </summary>
+    /// <returns>The new instance.</returns>
+    /// <exception cref="InstanceNotFoundException">No such instance.</exception>
+    /// <exception cref="InvalidStateTransitionException">
+    /// The instance has not finished, or its work was rolled back.
+    /// </exception>
+    /// <remarks>
+    /// Also a new linked instance, for the same reason
+    /// <see cref="RetryAsync"/> is: the original stays failed and readable
+    /// (ADR-0028 decision 2). What differs is where it starts and what it
+    /// starts with - the step that failed, and the workflow data the original
+    /// had reached.
+    ///
+    /// <para>
+    /// The position is reconstructed from <c>FailedStepName</c> and handed to
+    /// the same resumption path a crash recovery uses. Step names are unique
+    /// across the whole graph (#162), so a name identifies a node even inside a
+    /// branch - which is why this needs no separate machinery for a failure
+    /// that happened inside a fork.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>A rolled-back instance is refused.</b> Its completed steps were
+    /// deliberately undone, so continuing from the failure would run against a
+    /// world its workflow data no longer describes - the reserved stock has
+    /// been released, and the data still says it was reserved.
+    /// <see cref="RetryAsync"/> is the action for that case, and the exception
+    /// says so rather than leaving an operator to guess.
+    /// </para>
+    /// </remarks>
+    public async Task<WorkflowInstance> RetryFromFailedStepAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var original = await this.store.FindAsync(instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InstanceNotFoundException(instanceId);
+
+        if (!WorkflowInstance.FromRecord(original).IsTerminal)
+        {
+            throw new InvalidStateTransitionException(instanceId, original.Status, InstanceStatus.Running);
+        }
+
+        if (original.Status is InstanceStatus.Compensated or InstanceStatus.CompensationFailed)
+        {
+            throw new InvalidStateTransitionException(instanceId, original.Status, InstanceStatus.Running);
+        }
+
+        var definition = this.registry.Get(original.DefinitionId, original.DefinitionVersion);
+        var steps = Compile(definition);
+
+        var instance = new WorkflowInstance(
+            Guid.NewGuid(), definition.Id, definition.Version, this.timeProvider.GetUtcNow())
+        {
+            RetriedFromInstanceId = instanceId,
+        };
+
+        // The original's data, so the steps that already ran do not have to run
+        // again to produce what the failing step reads.
+        var data = new WorkflowData(original.Data);
+
+        // Empty for an instance that failed before recording a step name, in
+        // which case this is a retry from the start - which is the right answer
+        // rather than an error, since there is nothing to skip.
+        IReadOnlyList<ActiveNode> resumeFrom = original.FailedStepName is { } failed
+            ? [ActiveNode.At(failed)]
+            : [];
+
+        await this.store
+            .CreateAsync(instance.ToRecord(data, original.Input), cancellationToken)
+            .ConfigureAwait(false);
+
+        instance.Revision = 1;
+
+        using var scope = this.Scope(instance);
+        using var activity = this.tracing.StartInstance(instance, root: false);
+
+        this.logger.InstanceStarted(instance.DefinitionId, instance.DefinitionVersion);
+        this.metrics.InstanceStarted(instance);
+
+        await this.RunAsync(instance, steps, data, original.Input, resumeFrom, cancellationToken)
+            .ConfigureAwait(false);
+
+        MarkOutcome(activity, instance);
+
+        return instance;
+    }
+
+    /// <summary>
     /// Stops an instance and unwinds the work it had completed.
     /// </summary>
     /// <exception cref="InstanceNotFoundException">No such instance.</exception>
