@@ -54,3 +54,5 @@ benefits; an ADR listing only upsides is advocacy, not a record.
 | [0025](0025-observability.md) | Observability | Accepted | M8 |
 | [0026](0026-definition-version-lifecycle.md) | Definition version lifecycle | Accepted | M9 |
 | [0027](0027-multi-tenancy-and-performance.md) | Multi-tenancy out of scope; performance measured | Accepted | M9 |
+| [0028](0028-operator-actions.md) | Operator actions | Accepted | M10 |
+| [0029](0029-suspending-inside-a-branch.md) | Suspending inside a branch | Accepted | M10 |
