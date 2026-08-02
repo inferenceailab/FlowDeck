@@ -40,6 +40,19 @@ it.
 | `flowdeck_instances_failed_total` | counter | `definition_id`, `definition_version` |
 | `flowdeck_instances_cancelled_total` | counter | `definition_id`, `definition_version` |
 | `flowdeck_instances_compensated_total` | counter | `definition_id`, `definition_version`, `outcome` |
+| `flowdeck_steps_retried_total` | counter | `definition_id`, `definition_version`, `step_name` |
+| `flowdeck_compensations_total` | counter | `definition_id`, `definition_version`, `step_name`, `outcome` |
+
+`flowdeck_steps_retried_total` counts attempts **beyond the first**, so an
+ordinary run contributes nothing and the number reads as "how much trouble is
+this having" rather than "how much work is it doing". It is tagged by step,
+because *which* step is retrying is the part you cannot get anywhere else
+without reading history per instance.
+
+`flowdeck_compensations_total` is per **action**, where
+`flowdeck_instances_compensated_total` is per instance. The instance counter says
+a rollback happened and how it ended; this says how much of it succeeded — for a
+partial rollback, the difference between "one undo failed" and "nine did".
 
 An instance that rolled back is counted as **compensated and not as failed**, so
 the two never double-count one incident. The `outcome` label separates a clean
@@ -58,8 +71,6 @@ how it is used.
 - **Step duration** (#198). The question an operator usually arrives with is
   "which step is slow", and the answer today is in execution history per instance
   rather than aggregated. The data exists; the aggregate does not.
-- **Retry and compensation counts** (#199). Both mechanisms exist since M5 and
-  neither is visible without reading history.
 - **Cluster health** (#200) — instances running, leases held, recoveries
   performed. M6's machinery is inferred from the dashboard rather than measured.
 
@@ -150,7 +161,6 @@ apart; it is not something a log reader should have to parse.
 | --- | --- |
 | `/metrics` is unauthenticated | #42 |
 | No step-duration metric | #198 |
-| No retry or per-action compensation counters | #199 |
 | No cluster health metrics | #200 |
 | Nothing distinguishes a fork's arms in metrics | — |
 

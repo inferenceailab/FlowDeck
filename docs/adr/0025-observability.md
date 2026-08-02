@@ -73,8 +73,8 @@ That answers throughput and failure rate, which is what #41's intent names.
   operator actually arrives with is "which step is slow". Deferred because
   history already records per-step start and completion, so the data exists — it
   is unaggregated, not missing.
-- **Retry and compensation counters** (#199). M5 built both mechanisms and
-  neither is visible without reading history per instance.
+- ~~**Retry and compensation counters** (#199)~~ — **added 2026-08-02.** M5 built
+  both mechanisms and neither was visible without reading history per instance.
 - **Cluster health gauges** (#200). Instances running, leases held, recoveries
   performed. M6's machinery is currently inferred from the dashboard.
 

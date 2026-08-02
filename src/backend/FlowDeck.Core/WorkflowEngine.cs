@@ -1196,6 +1196,8 @@ public sealed class WorkflowEngine
                         // Says how long, not merely that it will happen again. A
                         // workflow backing off and a workflow that has hung look
                         // identical from outside without this.
+                        engine.metrics.StepRetried(instance, step.Name);
+
                         engine.logger.StepRetrying(
                             step.Name,
                             attempt,
@@ -1593,6 +1595,8 @@ public sealed class WorkflowEngine
                 // Rollback continues past a failure (ADR-0021), so an instance
                 // can leave several steps un-undone, and which ones is the
                 // whole content of the operator's next hour.
+                this.metrics.Compensated(instance, name, undone: false);
+
                 this.logger.RollbackFailed(
                     name,
                     result.Error?.GetType().Name,
@@ -1601,6 +1605,7 @@ public sealed class WorkflowEngine
             else
             {
                 compensated++;
+                this.metrics.Compensated(instance, name, undone: true);
                 this.logger.StepRolledBack(name);
             }
 
