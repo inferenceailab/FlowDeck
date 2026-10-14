@@ -25,7 +25,7 @@
   "devDependencies": {
     "@amiceli/vitest-cucumber": "^7.0.0",
     "@angular/build": "^22.1.2",
-    "@angular/cli": "^22.1.2",
+    "@angular/cli": "^22.2.2",
     "@angular/compiler-cli": "^22.1.0",
     "@angular/localize": "^22.1.0",
     "@eslint/js": "^10.0.1",
